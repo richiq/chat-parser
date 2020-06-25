@@ -1489,6 +1489,20 @@ QToolButton#attachmentButton
     padding: 0.5ex;
 }
 
+QToolButton#fileButton
+{
+	image: url(:/icons/file.svg);
+	background-color: transparent;
+}
+
+QToolButton#fileButton:pressed
+{
+	image: url(:/icons/file-pressed.svg);
+	background-color: #d23e58;
+	
+}
+
+
 QToolButton[popupMode="1"]  /* only for MenuButtonPopup */
 {
     padding-right: 2ex; /* make way for the popup button */

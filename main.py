@@ -6,52 +6,82 @@ import parser_core as parser
 import gui
 import gui_res
 import icons_res
-from PyQt5 import QtWidgets, QtGui, QtCore
-from PyQt5.QtCore import QTextStream, QFile, Qt
+
+from PyQt5.QtCore import QTextStream, QFile, Qt, QSize, QPropertyAnimation, QTimer, pyqtSignal, pyqtSlot, QObject, QRect, QThread
+from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtWidgets import (
+                                QDialog, QGraphicsOpacityEffect, QVBoxLayout, QTextEdit, QSizePolicy, QMainWindow,
+                                QTreeWidgetItem, QGridLayout, QWidget, QComboBox, QSpinBox, QCheckBox, QLabel,
+                                QApplication, QFileDialog, QButtonGroup, QMenu
+                            )
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
-class LengthDialog(QtWidgets.QDialog):
+class LengthDialog(QDialog):
     def __init__(self, *args):
         super().__init__()
-        self.setMinimumSize(QtCore.QSize(0, 0))
+        self.setMinimumSize(QSize(0, 0))
         self.setModal(False)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setStyleSheet("QDialog{background: #363B44; border-radius: 3ex; border: 1px solid #49515A} QPushButton{border: none}")
+
         if args:
             self.setParent(args[0])
-        self.setGeometry(0, 0, 0, 0)
-        self.setProperty("hidden", True)
+
+        self.opacity_effect = QGraphicsOpacityEffect()
+        self.opacity_effect.setOpacity(0)
+        self.setGraphicsEffect(self.opacity_effect)
+
+        self.opacity_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.opacity_anim.setDuration(100)
+        self.opacity_anim.setStartValue(0.0)
+        self.opacity_anim.setEndValue(1.0)
+
+        self.hide_timer = QTimer()
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.setInterval(200)
+        self.hide_timer.timeout.connect(lambda: self.hide())
+
+        self.hide()
+
+    def showEvent(self, event):
+        self.opacity_anim.setDirection(self.opacity_anim.Forward)
+        self.opacity_anim.start()
+
+    def hide_with_anim(self):
+        self.opacity_anim.setDirection(self.opacity_anim.Backward)
+        self.opacity_anim.start()
+        self.hide_timer.start()
 
 
-class PreviewDialog(QtWidgets.QDialog):
+class PreviewDialog(QDialog):
     def __init__(self):
         super().__init__()
-        self.lay1 = QtWidgets.QVBoxLayout(self)
-        self.txt = QtWidgets.QTextEdit(self)
+        self.lay1 = QVBoxLayout(self)
+        self.txt = QTextEdit(self)
         self.lay1.addWidget(self.txt)
-        self.setMinimumSize(QtCore.QSize(1, 1))
-        self.txt.setMinimumSize(QtCore.QSize(1, 1))
-        self.txt.setMaximumSize(QtCore.QSize(16777215, 16777))
+        self.setMinimumSize(QSize(1, 1))
+        self.txt.setMinimumSize(QSize(1, 1))
+        self.txt.setMaximumSize(QSize(16777215, 16777))
         self.setModal(False)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
-        self.txt.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.txt.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
 
 
-class MessageItem(QtWidgets.QTreeWidgetItem):
+class MessageItem(QTreeWidgetItem):
     def info(self):
         return self.data(0, 32)
 
 
-class Worker(QtCore.QObject):
+class Worker(QObject):
     userpic_data_dict: dict = {}
-    parsed = QtCore.pyqtSignal(list, dict, dict)
-    done = QtCore.pyqtSignal()
-    forward_icon = QtCore.pyqtSignal(tuple)
+    parsed = pyqtSignal(list, dict, dict)
+    done = pyqtSignal()
+    forward_icon = pyqtSignal(tuple)
 
-    @QtCore.pyqtSlot(str)
+    @pyqtSlot(str)
     def parse_file(self, path):
         t3 = time.perf_counter()
 
@@ -74,17 +104,19 @@ class Worker(QtCore.QObject):
         print(f"Пропарсил файл за  {t4 - t3} секунд \n")
         self.done.emit()
 
-    @QtCore.pyqtSlot(tuple)
+    @pyqtSlot(tuple)
     def load_userpic(self, user_url_tuple):
         user, url = user_url_tuple  # user_id, user_pic
         data = urllib.request.urlopen(url).read()
         self.forward_icon.emit((user, data))
 
 
-class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
+class ChatParser(QMainWindow, gui.Ui_MainWindow):
 
-    request_parsing = QtCore.pyqtSignal(str)
-    request_loadpic = QtCore.pyqtSignal(tuple)
+    request_parsing = pyqtSignal(str)
+    request_loadpic = pyqtSignal(tuple)
+
+    #def eventFilter(self):
 
     def closeEvent(self, *args, **kwargs):
         self.dialog.close()
@@ -93,21 +125,28 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
     def moveEvent(self, *args, **kwargs):
         if not self.dialog.isHidden():
             x, y, w, h = self.geometry().getRect()
-            self.dialog.setGeometry(QtCore.QRect(x - 250, y + 250, 250, 300))
+            self.dialog.setGeometry(QRect(x - 250, y + 250, 250, 300))
 
-    def showEvent(self, *args, **kwargs):
-        bx, by, bw, bh = self.browseButton.geometry().getRect()
+    def showEvent(self, event):
+        #event.ignore()
+        # bx, by, bw, bh = self.browseButton.geometry().getRect()
         tx, ty, tw, th = self.testButton.geometry().getRect()
-        self.browseButton.setGeometry(self.main_tabWidget.width() - 100, by, bw, bh)
+        # self.browseButton.setGeometry(self.main_tabWidget.width() - 100, by, bw, bh)
         self.testButton.setGeometry(self.main_tabWidget.width() - 210, ty, tw, th)
 
-    def resizeEvent(self, *args, **kwargs):
-        bx, by, bw, bh = self.browseButton.geometry().getRect()  # self.browseButton геометрия
+        self.show_anim = QPropertyAnimation(self, b"windowOpacity")
+        self.show_anim.setStartValue(0)
+        self.show_anim.setEndValue(1)
+        self.show_anim.setDuration(200)
+        self.show_anim.start()
+
+    def resizeEvent(self, event):
+        # bx, by, bw, bh = self.browseButton.geometry().getRect()  # self.browseButton геометрия
         tx, ty, tw, th = self.testButton.geometry().getRect()    # self.testButton геометрия
         lx = self.lengthButton.mapTo(self, self.lengthButton.pos()).x()-200
         ly = self.lengthButton.mapTo(self, self.lengthButton.pos()).y()-120
 
-        self.browseButton.setGeometry(self.main_tabWidget.width() - 100, by, bw, bh)
+        # self.browseButton.setGeometry(self.main_tabWidget.width() - 100, by, bw, bh)
         self.testButton.setGeometry(self.main_tabWidget.width() - 210, ty, tw, th)
         if not self.lengthDialog.property("hidden"):
             self.lengthDialog.setGeometry(lx, ly, 163, 90)
@@ -123,55 +162,55 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
             self.dialog = PreviewDialog()
             self.lengthDialog = LengthDialog(self)
-            self.symbWidg = QtWidgets.QWidget(self.lengthDialog)
+            self.symbWidg = QWidget(self.lengthDialog)
 
-            self.symbLayout = QtWidgets.QGridLayout(self.symbWidg)
+            self.symbLayout = QGridLayout(self.symbWidg)
             self.symbLayout.setObjectName("symbLayout")
-            self.and_orCombobox = QtWidgets.QComboBox(self.symbWidg)
-            self.and_orCombobox.setMinimumSize(QtCore.QSize(49, 20))
-            self.and_orCombobox.setMaximumSize(QtCore.QSize(66, 20))
+            self.and_orCombobox = QComboBox(self.symbWidg)
+            self.and_orCombobox.setMinimumSize(QSize(49, 20))
+            self.and_orCombobox.setMaximumSize(QSize(66, 20))
             self.and_orCombobox.setObjectName("and_orCombobox")
             self.and_orCombobox.addItem("или")
             self.and_orCombobox.addItem("и")
             self.symbLayout.addWidget(self.and_orCombobox, 1, 1, 1, 1)
-            self.min_symbolsCombobox = QtWidgets.QComboBox(self.symbWidg)
-            self.min_symbolsCombobox.setMinimumSize(QtCore.QSize(49, 20))
-            self.min_symbolsCombobox.setMaximumSize(QtCore.QSize(66, 20))
+            self.min_symbolsCombobox = QComboBox(self.symbWidg)
+            self.min_symbolsCombobox.setMinimumSize(QSize(49, 20))
+            self.min_symbolsCombobox.setMaximumSize(QSize(66, 20))
             self.min_symbolsCombobox.setObjectName("min_symbolsCombobox")
             self.min_symbolsCombobox.addItem("от")
             self.min_symbolsCombobox.addItem("только")
-            self.symbLayout.addWidget(self.min_symbolsCombobox, 3, 1, 1, 1, QtCore.Qt.AlignBottom)
-            self.min_symbolsSpinbox = QtWidgets.QSpinBox(self.symbWidg)
+            self.symbLayout.addWidget(self.min_symbolsCombobox, 3, 1, 1, 1, Qt.AlignBottom)
+            self.min_symbolsSpinbox = QSpinBox(self.symbWidg)
             self.min_symbolsSpinbox.setWrapping(True)
             self.min_symbolsSpinbox.setMinimum(1)
             self.min_symbolsSpinbox.setMaximum(9999)
             self.min_symbolsSpinbox.setProperty("value", 1)
             self.min_symbolsSpinbox.setObjectName("min_symbolsSpinbox")
             self.symbLayout.addWidget(self.min_symbolsSpinbox, 3, 2, 1, 1)
-            self.min_wordsCheckbox = QtWidgets.QCheckBox(self.symbWidg)
+            self.min_wordsCheckbox = QCheckBox(self.symbWidg)
             self.min_wordsCheckbox.setText("")
             self.min_wordsCheckbox.setChecked(False)
             self.min_wordsCheckbox.setObjectName("min_wordsCheckbox")
             self.symbLayout.addWidget(self.min_wordsCheckbox, 0, 0, 1, 1)
-            self.min_symbolsLabel = QtWidgets.QLabel(self.symbWidg)
+            self.min_symbolsLabel = QLabel(self.symbWidg)
             self.min_symbolsLabel.setObjectName("min_symbolsLabel")
             self.symbLayout.addWidget(self.min_symbolsLabel, 3, 3, 1, 1)
-            self.min_wordsLabel = QtWidgets.QLabel(self.symbWidg)
+            self.min_wordsLabel = QLabel(self.symbWidg)
             self.min_wordsLabel.setObjectName("min_wordsLabel")
             self.symbLayout.addWidget(self.min_wordsLabel, 0, 3, 1, 1)
-            self.min_symbolsCheckbox = QtWidgets.QCheckBox(self.symbWidg)
+            self.min_symbolsCheckbox = QCheckBox(self.symbWidg)
             self.min_symbolsCheckbox.setText("")
             self.min_symbolsCheckbox.setChecked(False)
             self.min_symbolsCheckbox.setObjectName("min_symbolsCheckbox")
             self.symbLayout.addWidget(self.min_symbolsCheckbox, 3, 0, 1, 1)
-            self.min_wordsCombobox = QtWidgets.QComboBox(self.symbWidg)
-            self.min_wordsCombobox.setMinimumSize(QtCore.QSize(49, 20))
-            self.min_wordsCombobox.setMaximumSize(QtCore.QSize(66, 20))
+            self.min_wordsCombobox = QComboBox(self.symbWidg)
+            self.min_wordsCombobox.setMinimumSize(QSize(49, 20))
+            self.min_wordsCombobox.setMaximumSize(QSize(66, 20))
             self.min_wordsCombobox.setObjectName("min_wordsCombobox")
             self.min_wordsCombobox.addItem("от")
             self.min_wordsCombobox.addItem("только")
             self.symbLayout.addWidget(self.min_wordsCombobox, 0, 1, 1, 1)
-            self.min_wordsSpinbox = QtWidgets.QSpinBox(self.symbWidg)
+            self.min_wordsSpinbox = QSpinBox(self.symbWidg)
             self.min_wordsSpinbox.setWrapping(True)
             self.min_wordsSpinbox.setMinimum(1)
             self.min_wordsSpinbox.setMaximum(9999)
@@ -190,103 +229,105 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.min_symbolsCheckbox.setChecked(False)
 
         def setup_icons(self):
-            file_icon = QtGui.QIcon()
-            file_icon.addPixmap(QtGui.QPixmap(":/icons/file.svg"))
+            file_icon = QIcon()
+            # иконка устанавливается через stylesheet
             self.fileButton.setIcon(file_icon)
-            self.fileButton.setToolTip("Открыть файл")
+            self.fileButton.setIconSize(QSize(30, 30))
 
-            settings_icon = QtGui.QIcon()
-            settings_icon.addPixmap(QtGui.QPixmap(":/icons/settings.svg"))
+            settings_icon = QIcon()
+            settings_icon.addPixmap(QPixmap(":/icons/settings-pressed.svg"), 0, 0)
+            settings_icon.addPixmap(QPixmap(":/icons/settings.svg"), 0, 1)
             self.settingsButton.setIcon(settings_icon)
             self.settingsButton.setToolTip("Настройки")
+            self.settingsButton.setIconSize(QSize(30, 30))
 
-            apply_icon = QtGui.QIcon()
-            apply_icon.addPixmap(QtGui.QPixmap(":/icons/apply.svg"))
+            apply_icon = QIcon()
+            apply_icon.addPixmap(QPixmap(":/icons/apply.svg"))
             self.applyButton.setIcon(apply_icon)
             self.applyButton.setToolTip("Применить")
 
-            attachment_icon = QtGui.QIcon()
-            attachment_icon.addPixmap(QtGui.QPixmap(":/icons/attachment-enabled-pressed.svg"), 0, 0)  # ВКЛ    и НАЖАТО
-            attachment_icon.addPixmap(QtGui.QPixmap(":/icons/attachment-enabled.svg"), 0, 1)  # ВКЛ    и НЕ НАЖАТО
-            attachment_icon.addPixmap(QtGui.QPixmap(":/icons/attachment-disabled.svg"), 1, 0)  # ВЫКЛ   и НАЖАТО
-            attachment_icon.addPixmap(QtGui.QPixmap(":/icons/attachment-disabled.svg"), 1, 1)  # ВЫКЛ   и НЕ НАЖАТО
+            attachment_icon = QIcon()
+            attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled-pressed.svg"), 0, 0)  # ВКЛ    и НАЖАТО
+            attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled.svg"), 0, 1)  # ВКЛ    и НЕ НАЖАТО
+            attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 0)  # ВЫКЛ   и НАЖАТО
+            attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 1)  # ВЫКЛ   и НЕ НАЖАТО
             self.attachmentButton.setIcon(attachment_icon)
             self.attachmentButton.setToolTip("Вложения")
 
-            forward_icon = QtGui.QIcon()
-            forward_icon.addPixmap(QtGui.QPixmap(":/icons/forward-enabled-pressed.svg"), 0, 0)
-            forward_icon.addPixmap(QtGui.QPixmap(":/icons/forward-enabled.svg"), 0, 1)
-            forward_icon.addPixmap(QtGui.QPixmap(":/icons/forward-disabled.svg"), 1, 0)
-            forward_icon.addPixmap(QtGui.QPixmap(":/icons/forward-disabled.svg"), 1, 1)
+            forward_icon = QIcon()
+            forward_icon.addPixmap(QPixmap(":/icons/forward-enabled-pressed.svg"), 0, 0)
+            forward_icon.addPixmap(QPixmap(":/icons/forward-enabled.svg"), 0, 1)
+            forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 0)
+            forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 1)
             self.forwardButton.setIcon(forward_icon)
             self.forwardButton.setToolTip("Пересланные сообщения")
 
-            emoji_icon = QtGui.QIcon()
-            emoji_icon.addPixmap(QtGui.QPixmap(":/icons/emoji-enabled-pressed.svg"), 0, 0)
-            emoji_icon.addPixmap(QtGui.QPixmap(":/icons/emoji-enabled.svg"), 0, 1)
-            emoji_icon.addPixmap(QtGui.QPixmap(":/icons/emoji-disabled-pressed.svg"), 1, 0)
-            emoji_icon.addPixmap(QtGui.QPixmap(":/icons/emoji-disabled.svg"), 1, 1)
+            emoji_icon = QIcon()
+            emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled-pressed.svg"), 0, 0)
+            emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled.svg"), 0, 1)
+            emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled-pressed.svg"), 1, 0)
+            emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled.svg"), 1, 1)
             self.emojiButton.setIcon(emoji_icon)
             self.emojiButton.setToolTip("Смайлики")
 
-            self.graffiti_icon = QtGui.QIcon()
-            self.graffiti_icon.addPixmap(QtGui.QPixmap(":/icons/graffiti-enabled-pressed.svg"), 0, 0)
-            self.graffiti_icon.addPixmap(QtGui.QPixmap(":/icons/graffiti-enabled.svg"), 0, 1)
-            self.graffiti_icon.addPixmap(QtGui.QPixmap(":/icons/graffiti-disabled.svg"), 1, 0)
-            self.graffiti_icon.addPixmap(QtGui.QPixmap(":/icons/graffiti-disabled.svg"), 1, 1)
+            self.graffiti_icon = QIcon()
+            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled-pressed.svg"), 0, 0)
+            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled.svg"), 0, 1)
+            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 0)
+            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 1)
             self.graffitiButton.setIcon(self.graffiti_icon)
             self.graffitiButton.setToolTip("Граффити")
 
-            voice_icon = QtGui.QIcon()
-            voice_icon.addPixmap(QtGui.QPixmap(":/icons/voice-enabled-pressed.svg"), 0, 0)
-            voice_icon.addPixmap(QtGui.QPixmap(":/icons/voice-enabled.svg"), 0, 1)
-            voice_icon.addPixmap(QtGui.QPixmap(":/icons/voice-disabled.svg"), 1, 0)
-            voice_icon.addPixmap(QtGui.QPixmap(":/icons/voice-disabled.svg"), 1, 1)
+            voice_icon = QIcon()
+            voice_icon.addPixmap(QPixmap(":/icons/voice-enabled-pressed.svg"), 0, 0)
+            voice_icon.addPixmap(QPixmap(":/icons/voice-enabled.svg"), 0, 1)
+            voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 0)
+            voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 1)
             self.voiceButton.setIcon(voice_icon)
             self.voiceButton.setToolTip("Голосовые сообщения")
 
-            no_text_icon = QtGui.QIcon()
-            no_text_icon.addPixmap(QtGui.QPixmap(":/icons/notext.svg"), 0, 0)
-            no_text_icon.addPixmap(QtGui.QPixmap(":/icons/notext.svg"), 0, 1)
-            no_text_icon.addPixmap(QtGui.QPixmap(":/icons/notext.svg"), 1, 0)
-            no_text_icon.addPixmap(QtGui.QPixmap(":/icons/notext.svg"), 1, 1)
+            no_text_icon = QIcon()
+            no_text_icon.addPixmap(QPixmap(":/icons/notext.svg"), 0, 0)
+            no_text_icon.addPixmap(QPixmap(":/icons/notext.svg"), 0, 1)
+            no_text_icon.addPixmap(QPixmap(":/icons/notext.svg"), 1, 0)
+            no_text_icon.addPixmap(QPixmap(":/icons/notext.svg"), 1, 1)
             self.notextButton.setIcon(no_text_icon)
             self.notextButton.setToolTip("Сообщения без текста")
 
-            sticker_icon = QtGui.QIcon()
-            sticker_icon.addPixmap(QtGui.QPixmap(":/icons/sticker-enabled-pressed.png"), 0, 0)
-            sticker_icon.addPixmap(QtGui.QPixmap(":/icons/sticker-enabled.png"), 0, 1)
-            sticker_icon.addPixmap(QtGui.QPixmap(":/icons/sticker-disabled-pressed.png"), 1, 0)
-            sticker_icon.addPixmap(QtGui.QPixmap(":/icons/sticker-disabled.png"), 1, 1)
+            sticker_icon = QIcon()
+            sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled-pressed.png"), 0, 0)
+            sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled.png"), 0, 1)
+            sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled-pressed.png"), 1, 0)
+            sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled.png"), 1, 1)
             self.stickerButton.setIcon(sticker_icon)
             self.stickerButton.setToolTip("Стикеры")
 
-            hide_icon = QtGui.QIcon()
-            hide_icon.addPixmap(QtGui.QPixmap(":/icons/hide.svg"))
+            hide_icon = QIcon()
+            hide_icon.addPixmap(QPixmap(":/icons/hide.svg"))
             self.hideButton.setIcon(hide_icon)
             self.hideButton.setToolTip("Скрыть выделенные сообщения")
 
-            undo_icon = QtGui.QIcon()
-            undo_icon.addPixmap(QtGui.QPixmap(":/icons/undo.svg"))
+            undo_icon = QIcon()
+            undo_icon.addPixmap(QPixmap(":/icons/undo.svg"))
             self.undoButton.setIcon(undo_icon)
             self.undoButton.setToolTip("Показать последнее скрытое")
 
-            att_header_pixmap = QtGui.QPixmap()
+            att_header_pixmap = QPixmap()
             att_header_pixmap.load(":/icons/attachment-enabled-pressed.svg")
-            att_header_pixmap = att_header_pixmap.scaled(10, 10, QtCore.Qt.KeepAspectRatio,
-                                                         QtCore.Qt.SmoothTransformation)
-            self.att_header_icon = QtGui.QIcon()
-            self.att_header_icon.addPixmap(att_header_pixmap, QtGui.QIcon.Selected, QtGui.QIcon.On)
+            att_header_pixmap = att_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
+                                                         Qt.SmoothTransformation)
+            self.att_header_icon = QIcon()
+            self.att_header_icon.addPixmap(att_header_pixmap, QIcon.Selected, QIcon.On)
             self.messageTree.headerItem().setText(1, "")
             self.messageTree.headerItem().setIcon(1, self.att_header_icon)
             self.messageTree.headerItem().setToolTip(1, "Содержит вложения")
 
-            fwd_header_pixmap = QtGui.QPixmap()
+            fwd_header_pixmap = QPixmap()
             fwd_header_pixmap.load(":/icons/forward-enabled-pressed.svg")
-            fwd_header_pixmap = fwd_header_pixmap.scaled(10, 10, QtCore.Qt.KeepAspectRatio,
-                                                         QtCore.Qt.SmoothTransformation)
-            self.fwd_header_icon = QtGui.QIcon()
-            self.fwd_header_icon.addPixmap(fwd_header_pixmap, QtGui.QIcon.Selected, QtGui.QIcon.On)
+            fwd_header_pixmap = fwd_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
+                                                         Qt.SmoothTransformation)
+            self.fwd_header_icon = QIcon()
+            self.fwd_header_icon.addPixmap(fwd_header_pixmap, QIcon.Selected, QIcon.On)
             self.messageTree.headerItem().setText(2, "")
             self.messageTree.headerItem().setIcon(2, self.fwd_header_icon)
             self.messageTree.headerItem().setToolTip(2, "Содержит пересланные сообщения")
@@ -298,38 +339,38 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.messageTree.setColumnWidth(0, 330)
             self.messageTree.setColumnWidth(1, 1)
             self.messageTree.setColumnWidth(2, 1)
-            self.messageTree.setIconSize(QtCore.QSize(20, 20))
+            self.messageTree.setIconSize(QSize(20, 20))
             self.messageTree.setRootIsDecorated(False)
             self.messageTree.setUniformRowHeights(True)
 
-            self.messageTreeItem = QtWidgets.QTreeWidgetItem
+            self.messageTreeItem = QTreeWidgetItem
             self.messageTreeRoot = self.messageTree.invisibleRootItem()
 
             # вкладка Анализ
             self.analysis_wordsTree.setRootIsDecorated(False)
             self.analysis_wordsTree.setUniformRowHeights(True)
-            self.analysis_wordsTreeItem = QtWidgets.QTreeWidgetItem
+            self.analysis_wordsTreeItem = QTreeWidgetItem
             self.analysis_wordsTreeRoot = self.analysis_wordsTree.invisibleRootItem()
 
             self.analysis_emojisTree.setRootIsDecorated(False)
             self.analysis_emojisTree.setUniformRowHeights(True)
-            self.analysis_emojiTreeItem = QtWidgets.QTreeWidgetItem
+            self.analysis_emojiTreeItem = QTreeWidgetItem
             self.analysis_emojiTreeRoot = self.analysis_emojisTree.invisibleRootItem()
 
             # кнопки
             self.testButton.setParent(self.main_tabWidget)
             self.testButton.setMaximumHeight(17)
 
-            self.browseButton.setParent(self.main_tabWidget)
-            self.browseButton.setMaximumHeight(17)
+            # self..setParent(self.main_tabWidget)
+            # self.browseButton.setMaximumHeight(17)
 
-            self.undo_menu = QtWidgets.QMenu()
+            self.undo_menu = QMenu()
             self.undo_menu.addAction("Вернуть все")
             self.undoButton.setMenu(self.undo_menu)
             self.undoButton.setEnabled(False)
             self.hideButton.setEnabled(False)
 
-            self.filterbuttons_group = QtWidgets.QButtonGroup()
+            self.filterbuttons_group = QButtonGroup()
             self.filterbuttons_group.addButton(self.notextButton, 0)
             self.filterbuttons_group.addButton(self.emojiButton, 1)
             self.filterbuttons_group.addButton(self.attachmentButton, 2)
@@ -337,12 +378,12 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.filterbuttons_group.addButton(self.graffitiButton, 4)
             self.filterbuttons_group.setExclusive(False)
 
-            self.filterbuttons_attgroup = QtWidgets.QButtonGroup()
+            self.filterbuttons_attgroup = QButtonGroup()
             self.filterbuttons_attgroup.addButton(self.stickerButton, 0)
             self.filterbuttons_attgroup.addButton(self.voiceButton, 1)
             self.filterbuttons_attgroup.setExclusive(False)
 
-            self.attachmentMenu = QtWidgets.QMenu()
+            self.attachmentMenu = QMenu()
             self.attachmentMenu.setWindowFlags(self.attachmentMenu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
             self.attachmentMenu.setAttribute(Qt.WA_TranslucentBackground)
             self.attachmentMenu.setObjectName("attachmentMenu")
@@ -372,7 +413,7 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             # кнопки
             self.testButton.clicked.connect(self.test_function)
             self.applyButton.clicked.connect(self.refresh)
-            self.browseButton.clicked.connect(self.browse_file)
+            self.fileButton.clicked.connect(self.browse_file)
 
             self.hideButton.clicked.connect(self.hide_item)
             self.undoButton.clicked.connect(self.undo_last)
@@ -438,7 +479,7 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
         def start_worker(self):
             self.worker = Worker()
-            self.worker_thread = QtCore.QThread()
+            self.worker_thread = QThread()
             self.request_parsing.connect(self.worker.parse_file)
             self.worker.parsed.connect(self.insert_item)
             self.worker.done.connect(self.parsing_done)
@@ -451,51 +492,37 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         init(self)
 
     def settings(self):
-        self.settings_anim = QtCore.QPropertyAnimation(self.settingsWidget, b"maximumHeight")
+        self.settings_anim = QPropertyAnimation(self.settingsWidget, b"maximumHeight")
         self.settings_anim.setDuration(100)
         self.settings_anim.setStartValue(0)
-        self.settings_anim.setEndValue(385)
+        self.settings_anim.setEndValue(485)
+        #print(self.settingsWidget.size())
 
         if self.settingsWidget.geometry().getRect()[3] == 0:
             self.settings_anim.setDirection(self.settings_anim.Forward)
             self.settings_anim.start()
         else:
+            self.lengthDialog.hide_with_anim()
+            self.lengthButton.setChecked(False)
             self.settings_anim.setDirection(self.settings_anim.Backward)
             self.settings_anim.start()
-            if not self.lengthDialog.property("hidden"):
-                self.length_anim.setDirection(self.length_anim.Backward)
-                self.length_anim.start()
-                self.lengthDialog.setProperty("hidden", True)
-                self.lengthButton.setChecked(False)
 
     def length_settings(self):
         lengthx = self.lengthButton.mapTo(self, self.lengthButton.pos()).x() - 200
         lengthy = self.lengthButton.mapTo(self, self.lengthButton.pos()).y() - 120
-        self.length_anim = QtCore.QPropertyAnimation(self.lengthDialog, b"geometry")
-        self.length_anim.setDuration(50)
-        self.length_anim.setStartValue(QtCore.QRect(lengthx, lengthy, 0, 0))
-        self.length_anim.setEndValue(QtCore.QRect(lengthx, lengthy, 163, 90))
+        self.lengthDialog.setGeometry(lengthx, lengthy, 163, 90)
 
-        if self.lengthDialog.property("hidden"):
-            self.length_anim.setDirection(self.length_anim.Forward)
-            self.length_anim.start()
-            self.lengthDialog.setProperty("hidden", False)
+        if self.lengthDialog.isHidden():
+            self.lengthDialog.show()
         else:
-            self.length_anim.setDirection(self.length_anim.Backward)
-            self.length_anim.start()
-            self.lengthDialog.setProperty("hidden", True)
-
-
-
-
+            self.lengthDialog.hide_with_anim()
 
     def browse_file(self):
         # вызывается при нажатии на кнопку Открыть файл
-        file_path = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите файл", filter="*.html") # окно с выбором файла
+        file_path = QFileDialog.getOpenFileName(self, "Выберите файл", filter="*.html") # окно с выбором файла
         if len(file_path[0]):
             file_path, extension = file_path
             self.clear_everything()
-            self.messageTree.setUniformRowHeights(True)
             self.request_parsing.emit(file_path)
 
     def parsing_done(self):
@@ -543,8 +570,6 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.graffitiButton.setChecked(state)
         self.stickerButton.setChecked(state)
         self.voiceButton.setChecked(state)
-
-
 
     def clear_everything(self):
         self.messageTree.clear()
@@ -600,12 +625,12 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
         for item in userpic_data_dict.items():
             user = item[0]
-            pixmap = QtGui.QPixmap()
+            pixmap = QPixmap()
             pixmap.loadFromData(item[1])
-            icon = QtGui.QIcon()
-            icon.addPixmap(QtGui.QPixmap(pixmap), QtGui.QIcon.Selected, QtGui.QIcon.On)
+            icon = QIcon()
+            icon.addPixmap(QPixmap(pixmap), QIcon.Selected, QIcon.On)
             if user not in self.userpic_icon_dict:
-                self.userpic_icon_dict[user] = QtGui.QIcon(icon)
+                self.userpic_icon_dict[user] = QIcon(icon)
 
         for message in messages_list:
             item = MessageItem(self.messageTree)
@@ -641,13 +666,13 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
         self.analysis_wordsTree.clear()
         for word, amount in self.analysis_dict["most_words"].most_common(100):
-            item = QtWidgets.QTreeWidgetItem(self.analysis_wordsTree)
+            item = QTreeWidgetItem(self.analysis_wordsTree)
             item.setText(0, word)
             item.setText(1, str(amount))
 
         self.analysis_emojisTree.clear()
         for emoji, amount in self.analysis_dict["most_emojis"].most_common(100):
-            item = QtWidgets.QTreeWidgetItem(self.analysis_emojisTree)
+            item = QTreeWidgetItem(self.analysis_emojisTree)
             item.setText(0, emoji)
             item.setText(1, str(amount))
 
@@ -949,10 +974,10 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
         #  дополнительная проверка, был ли юзерпик загружен ранее
         if user not in self.userpic_icon_dict:
-            pixmap = QtGui.QPixmap()
+            pixmap = QPixmap()
             pixmap.loadFromData(data)
-            icon = QtGui.QIcon()
-            icon.addPixmap(QtGui.QPixmap(pixmap), QtGui.QIcon.Selected, QtGui.QIcon.On)
+            icon = QIcon()
+            icon.addPixmap(QPixmap(pixmap), QIcon.Selected, QIcon.On)
             self.userpic_icon_dict[user] = icon
 
         # если нужно загрузить авы
@@ -999,7 +1024,7 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         if self.dialog.isHidden():
             self.dialog.show()
             x, y, w, h = self.geometry().getRect()
-            self.dialog.setGeometry(QtCore.QRect(x - 250, y + 250, 250, 300))
+            self.dialog.setGeometry(QRect(x - 250, y + 250, 250, 300))
             self.attachmentButton.setEnabled(True)
             self.forwardButton.setEnabled(True)
             self.graffitiButton.setEnabled(True)
@@ -1019,7 +1044,7 @@ class ChatParser(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
 
 def main():
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     window = ChatParser()
     window.show()
 
@@ -1052,10 +1077,10 @@ for att in message[1]["attachments"]:
     if att["att_type"] == "att_photo":
         url = att["att_link"]
         data = urllib.request.urlopen(url).read()
-        pixmap = QtGui.QPixmap()
+        pixmap = QPixmap()
         pixmap.loadFromData(data)
-        pixmap = pixmap.scaled(100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        widget = QtWidgets.QLabel()
-        widget.setPixmap(QtGui.QPixmap(pixmap))
-        child = self.messageTree.setItemWidget(QtWidgets.QTreeWidgetItem(tree_item), 0, widget)
+        pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        widget = QLabel()
+        widget.setPixmap(QPixmap(pixmap))
+        child = self.messageTree.setItemWidget(QTreeWidgetItem(tree_item), 0, widget)
 """
