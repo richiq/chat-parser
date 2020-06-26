@@ -34,8 +34,13 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ---------------------------------------------------------------------
  */
- 
- QTabWidget#btntab
+QMainWindow,
+QApplication
+{
+    background: #282B32;
+}
+
+QTabWidget#btntab
  {
      background-color: red
  }
@@ -91,8 +96,7 @@ QSpinBox
 }
 
 QToolButton#undoButton,
-QToolButton#hideButton,
-QToolButton#attachmentButton
+QToolButton#hideButton
 {
     background-color: #1F1F1F;
     border-radius: 2ex;
@@ -536,6 +540,16 @@ QScrollBar::handle:vertical
     background-color: #d23e58;
     min-height: 5ex;
     border-radius: 0.4ex;
+}
+
+QScrollArea QScrollBar:vertical
+{
+    width: 2ex;
+}
+
+QScrollArea QScrollBar::handle:vertical
+{
+    max-height: 10ex;
 }
 
 QScrollBar::handle:vertical:hover,
@@ -1479,8 +1493,7 @@ QSlider::sub-page:vertical
     border-radius: 0.3ex;
 }
 
-QToolButton,
-QToolButton#attachmentButton
+QToolButton
 {
     background-color: transparent;
     border: 0.1ex solid #474747;
@@ -1498,7 +1511,20 @@ QToolButton#fileButton
 QToolButton#fileButton:pressed
 {
 	image: url(:/icons/file-pressed.svg);
-	background-color: #d23e58;
+	background-color: transparent;
+	
+}
+
+QToolButton#applyButton
+{
+	image: url(:/icons/apply.svg);
+	background-color: transparent;
+}
+
+QToolButton#applyButton:pressed
+{
+	image: url(:/icons/apply-pressed.svg);
+	background-color: transparent;
 	
 }
 
@@ -1539,9 +1565,7 @@ QToolButton::menu-button:hover
 
 /*QToolButton:pressed*/
 QToolButton:checked,
-QToolButton::menu-button:pressed,
-QToolButton#attachmentButton:checked,
-QToolButton#attachmentButton::menu-button:pressed
+QToolButton::menu-button:pressed
 {
     background-color: #d23e58;
     border: 0.1ex solid #d23e58;
@@ -1926,15 +1950,7 @@ QToolButton:checked[autoExclusive="true"]
     border-radius: 5ex;
 }
 
-QToolButton#attachmentButton:checked,
-QToolButton#attachmentButton::menu-button:pressed
-{
-    background-color: #d23e58;
-    border: 0.1ex solid #d23e58;
-    selection-color: #ffffff;
-    padding: 0.5ex;
-    border-radius: 2ex;
-}
+
 
 
 

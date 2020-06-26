@@ -8,7 +8,12 @@ from lxml import etree
 
 userpic_dict: dict = {}
 msg_dict: dict = {}
-flag = Flags("Message Flags", "notext hastext hasemoji noemoji noattachment hasattachment graffiti sticker voice noforward hasforward isforward")
+flags = """
+notext hastext hasemoji noemoji noattachment
+hasattachment graffiti sticker voice 
+noforward hasforward isforward
+"""
+flag = Flags("Message Flags", flags)
 
 
 class Object:
@@ -175,18 +180,18 @@ def parse_message(message_item):
             #flags = flags | flag.noemoji
 
         if not length_symbols_no_spaces == 0:
-            #flags = flags | flag.hastext
+            flags = flags | flag.hastext
             text_info = TextInfo({"text": text,
                                   "length_words": length_words,
                                   "length_symbols_spaces": length_symbols_spaces,
                                   "length_symbols_no_spaces": length_symbols_no_spaces,
                                   "emoji": emoji})
         else:
-            text_info = None
             flags = flags | flag.notext
+            text_info = None
     else:
-        text_info = None
         flags = flags | flag.notext
+        text_info = None
 
     # получение attachments
     if message_item.find(".div[@class='attacments']") is not None:
