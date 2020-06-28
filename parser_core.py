@@ -6,8 +6,8 @@ import collections
 from flags import Flags
 from lxml import etree
 
-userpic_dict: dict = {}
-msg_dict: dict = {}
+userpic_urls: dict = {}
+analysis_todo: dict = {}
 flags = """
 notext hastext hasemoji noemoji noattachment
 hasattachment graffiti sticker voice 
@@ -29,17 +29,14 @@ class Message(Object):
     __slots__ = ("msgid", "date_info", "user_info",
                  "text_info", "attachments", "forwards", "flags")
 
-    def __repr__(self):
-        return "КЕК"
-
 
 class DateInfo(Object):
     __slots__ = ("time", "date")
 
 
 class UserInfo(Object):
-    __slots__ = ("user_id", "user_link",
-                 "user_pic", "user_name")
+    __slots__ = ("userid", "userlink",
+                 "userpic", "username")
 
 
 class TextInfo(Object):
@@ -75,24 +72,23 @@ def parse_file(file_path: str, batch_amount: int):
                 msg_amount(elem)
                 if elem.tag == "div":
                     if "id" in elem.attrib:
-                        #print(parse_message(elem))
                         batch_list.append(parse_message(elem))
                         elem.clear()
                         if len(batch_list) == batch_amount:
                             print(f"Пропарсил {batch_amount} сообщений за {round(time.perf_counter()-pt1, 3)}")
                             pt1 = time.perf_counter()
 
-                            analysis_dict = analyse(msg_dict)
-                            msg_dict.clear()
+                            analysis_dict = analyse(analysis_todo)
+                            analysis_todo.clear()
 
-                            yield batch_list, userpic_dict, analysis_dict
+                            yield batch_list, analysis_dict
                             batch_list = []
 
         if len(batch_list) > 0:
-            analysis_dict = analyse(msg_dict)
-            msg_dict.clear()
+            analysis_dict = analyse(analysis_todo)
+            analysis_todo.clear()
 
-            yield batch_list, userpic_dict, analysis_dict
+            yield batch_list, analysis_dict
 
         tree = ()
 
@@ -119,21 +115,21 @@ def parse_message(message_item):
     upic_contents = message_item.find(".div[@class='upic']*")
     from_contents = message_item.findall(".div[@class='from']*")
 
-    user_pic = upic_contents.attrib["src"]
-    user_name = from_contents[0].text
-    user_link = from_contents[1].attrib["href"]
-    user_id = from_contents[1].text
+    userpic = upic_contents.attrib["src"]
+    username = from_contents[0].text
+    userlink = from_contents[1].attrib["href"]
+    userid = from_contents[1].text
 
-    if user_id not in userpic_dict and msgid != "fwd":
-        userpic_dict[user_id] = user_pic
+    if userid not in userpic_urls and msgid != "fwd":
+        userpic_urls[userid] = userpic
 
-    # if user_id not in userpic_dict:
-    #     userpic_dict[user_id] = user_pic
+    # if userid not in userpic_dict:
+    #     userpic_dict[userid] = userpic
 
-    user_info = UserInfo({"user_id": user_id,
-                          "user_name": user_name,
-                          "user_link": user_link,
-                          "user_pic": user_pic})
+    user_info = UserInfo({"userid": userid,
+                          "username": username,
+                          "userlink": userlink,
+                          "userpic": userpic})
 
     # получение date_info
     if msgid == "fwd":
@@ -222,7 +218,7 @@ def parse_message(message_item):
         forwards = None
         #flags = flags | flag.noforward
 
-    msg_dict[msgid] = {"user_info": user_info, "date_info": date_info,
+    analysis_todo[msgid] = {"user_info": user_info, "date_info": date_info,
                        "text_info": text_info, "attachments": attachments,
                        "forwards": forwards}
 
@@ -352,7 +348,7 @@ def parse_forward(head_tag):
     return forwards_list
 
 
-def analyse(messages_dict):
+def analyse(todo: dict):
     most_words_cntr = collections.Counter()
     most_emojis_cntr = collections.Counter()
     words_amount = 0
@@ -360,7 +356,7 @@ def analyse(messages_dict):
     stickers_amount = 0
     emojis_amount = 0
 
-    for message in messages_dict.values():
+    for message in todo.values():
         if message["text_info"]:
             length_words = message["text_info"].length_words
             length_symbols = message["text_info"].length_symbols_no_spaces
