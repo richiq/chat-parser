@@ -120,11 +120,9 @@ def parse_message(message_item):
     userlink = from_contents[1].attrib["href"]
     userid = from_contents[1].text
 
+    global userpic_urls
     if userid not in userpic_urls and msgid != "fwd":
         userpic_urls[userid] = userpic
-
-    # if userid not in userpic_dict:
-    #     userpic_dict[userid] = userpic
 
     user_info = UserInfo({"userid": userid,
                           "username": username,

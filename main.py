@@ -20,29 +20,54 @@ from PyQt5.QtWidgets import (
                                 QApplication, QFileDialog, QButtonGroup, QMenu
                             )
 
-from PyQt5.QtSvg import QSvgWidget
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
-class LengthDialog(QDialog):
+class AbstractDialog(QDialog):
     def __init__(self, *args):
         super().__init__()
         if args:
             self.setParent(args[0])
-
-        self.setMinimumSize(QSize(0, 0))
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Widget)
         self.setModal(False)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.set_animation()
+        self.hide()
+
+    def set_animation(self):
+        self.opacity_effect = QGraphicsOpacityEffect()
+        self.opacity_effect.setOpacity(0)
+        self.setGraphicsEffect(self.opacity_effect)
+
+        self.opacity_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.opacity_anim.setDuration(100)
+        self.opacity_anim.setStartValue(0.0)
+        self.opacity_anim.setEndValue(1.0)
+
+        self.hide_timer = QTimer()
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.setInterval(200)
+        self.hide_timer.timeout.connect(lambda: self.hide())
+
+    def showEvent(self, event):
+        self.opacity_anim.setDirection(self.opacity_anim.Forward)
+        self.opacity_anim.start()
+
+    def hide_with_anim(self):
+        self.opacity_anim.setDirection(self.opacity_anim.Backward)
+        self.opacity_anim.start()
+        self.hide_timer.start()
+
+
+class LengthDialog(AbstractDialog):
+    def __init__(self, *args):
+        super().__init__()
+        self.setMinimumSize(QSize(0, 0))
         self.setStyleSheet("""
                            QDialog{background: #363B44; border-radius: 3ex; border: 1px solid #49515A} 
                            QPushButton{border: none}
                            """)
-
         self.set_widgets()
-        self.set_animation()
-
-        self.hide()
 
     def set_widgets(self):
         self.lengthWidget = QWidget(self)
@@ -109,46 +134,16 @@ class LengthDialog(QDialog):
         self.min_wordsSpinbox.setObjectName("min_wordsSpinbox")
         self.lengthLayout.addWidget(self.min_wordsSpinbox, 0, 2, 1, 1)
 
-    def set_animation(self):
-        self.opacity_effect = QGraphicsOpacityEffect()
-        self.opacity_effect.setOpacity(0)
-        self.setGraphicsEffect(self.opacity_effect)
-
-        self.opacity_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.opacity_anim.setDuration(100)
-        self.opacity_anim.setStartValue(0.0)
-        self.opacity_anim.setEndValue(1.0)
-
-        self.hide_timer = QTimer()
-        self.hide_timer.setSingleShot(True)
-        self.hide_timer.setInterval(200)
-        self.hide_timer.timeout.connect(lambda: self.hide())
-
-    def showEvent(self, event):
-        self.opacity_anim.setDirection(self.opacity_anim.Forward)
-        self.opacity_anim.start()
-
-    def hide_with_anim(self):
-        self.opacity_anim.setDirection(self.opacity_anim.Backward)
-        self.opacity_anim.start()
-        self.hide_timer.start()
-
 
 class PreviewDialog(QDialog):
     def __init__(self, *args):
         super().__init__()
-        if args:
-            self.setParent(args[0])
         self.ratio = 0.0
-        self.setModal(False)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Widget)
         self.setStyleSheet("""
                            QDialog{background: #363B44; border-radius: 2ex; border: 0.5px solid #49515A}
                            QTextEdit{border-radius: 2ex;}
                            """)
         self.set_widgets()
-        self.set_animation()
-        self.hide()
 
     def set_widgets(self):
         self.textEdit = QTextEdit(self)
@@ -158,33 +153,6 @@ class PreviewDialog(QDialog):
         self.layout.addWidget(self.textEdit)
         self.layout.addWidget(self.imageLabel)
         self.imageLabel.hide()
-
-    def set_animation(self):
-        self.opacity_effect = QGraphicsOpacityEffect()
-        self.opacity_effect.setOpacity(0)
-        self.setGraphicsEffect(self.opacity_effect)
-
-        self.opacity_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.opacity_anim.setDuration(100)
-        self.opacity_anim.setStartValue(0.0)
-        self.opacity_anim.setEndValue(1.0)
-
-        self.hide_timer = QTimer()
-        self.hide_timer.setSingleShot(True)
-        self.hide_timer.setInterval(200)
-        self.hide_timer.timeout.connect(lambda: self.hide())
-
-    def psize(self):
-        return int(self.ratio*130)
-
-    def showEvent(self, event):
-        self.opacity_anim.setDirection(self.opacity_anim.Forward)
-        self.opacity_anim.start()
-
-    def hide_with_anim(self):
-        self.opacity_anim.setDirection(self.opacity_anim.Backward)
-        self.opacity_anim.start()
-        self.hide_timer.start()
 
 
 class MessageItem(QTreeWidgetItem):
@@ -234,14 +202,12 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
         self.show_anim.start()
 
     def resizeEvent(self, event):
-        lx = self.lengthButton.mapTo(self, self.lengthButton.pos()).x()-200
-        ly = self.lengthButton.mapTo(self, self.lengthButton.pos()).y()-120
         tx, ty, tw, th = self.testButton.geometry().getRect()
-
         self.testButton.setGeometry(self.main_tabWidget.width() - 210, ty, tw, th)
 
+
         if not self.lengthDialog.isHidden():
-            self.lengthDialog.setGeometry(lx, ly, 163, 90)
+            self.set_length_geometry()
         if not self.previewDialog.isHidden():
             self.set_preview_geometry()
 
@@ -571,10 +537,7 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
             self.settings_anim.start()
 
     def length_settings(self):
-        lengthx = self.lengthButton.mapTo(self, self.lengthButton.pos()).x() - 200
-        lengthy = self.lengthButton.mapTo(self, self.lengthButton.pos()).y() - 120
-        self.lengthDialog.setGeometry(lengthx, lengthy, 163, 90)
-
+        self.set_length_geometry()
         if self.lengthDialog.isHidden():
             self.lengthDialog.show()
         else:
@@ -704,7 +667,6 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
     def loading_icon_update(self):
 
         if self.requested_userpics or self.requested_photos:
-
             if self.requested_userpics:
                 for item in self.requested_userpics:
                     user = item.info().user_info.userid
@@ -716,20 +678,21 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
 
             if self.requested_photos:
                 label = self.previewDialog.imageLabel
-                url = label.property("photo_url")
-
-                if not label.isHidden() and url is not None:
-                    if url not in self.loaded_photos:
-                        label.setPixmap(self.loading_icon.currentPixmap().scaled(130, 130))
-                    else:
-                        pixmap, ratio = self.loaded_photos.get(url)
-                        label.setPixmap(pixmap)
-                        self.previewDialog.ratio = ratio
+                att_type, content = self.hovered
+                if not label.isHidden():
+                    if att_type == "att_photo":
+                        url = content
                         if url in self.requested_photos:
-                            self.requested_photos.remove(url)
-
-                    self.set_preview_geometry()
-
+                            if url in self.loaded_photos:
+                                pixmap, ratio = self.loaded_photos.get(url)
+                                label.setPixmap(pixmap)
+                                self.requested_photos.remove(url)
+                                self.previewDialog.ratio = ratio
+                            elif url not in self.loaded_photos:
+                                pixmap = self.loading_icon.currentPixmap().scaled(130, 130, transformMode=1)
+                                label.setPixmap(pixmap)
+                                self.previewDialog.ratio = 1
+                            self.set_preview_geometry()
         else:
             self.loading_icon.stop()
 
@@ -1012,50 +975,91 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
 
     def preview_handling(self, item):
 
-        def set_preview(self, attachment):
-            if attachment.info().att_type == "att_photo":
-                url = attachment.info().att_link
-                self.previewDialog.imageLabel.setProperty("photo_url", url)
+        def set_preview(self, item):
+            if not self.previewDialog.isHidden():
+                if item.info().type() in ("Message", "Forward"):
+                    if self.flag.hastext in item.info().flags:
+                        set_preview_text(self, item)
+                    if self.flag.notext in item.info().flags:
+                        if self.flag.hasattachment in item.info().flags:
+                            if item.childCount() == 1:
+                                set_preview_attachment(self, item.child(0))
+                            elif item.childCount() > 1:
+                                if self.flag.hasforward not in item.info().flags:
+                                    set_preview_multiatt(self)
+                        else:
+                            set_preview_notext(self)
+
+                elif item.info().type() == "Attachment":
+                    set_preview_attachment(self, item)
+                self.set_preview_geometry()
+
+        def set_preview_attachment(self, att_obj):
+            hovered_type = att_obj.info().att_type
+            url = att_obj.info().att_link
+            self.hovered = (hovered_type, url)
+            if hovered_type == "att_photo":
                 self.previewDialog.textEdit.hide()
                 self.previewDialog.imageLabel.show()
                 if url not in self.loaded_photos:
                     if url not in self.requested_photos:
                         self.requested_photos.append(url)
                         self.request_photo(url)
-                        self.previewDialog.ratio = 1
                 else:
                     pixmap, ratio = self.loaded_photos.get(url)
                     self.previewDialog.imageLabel.setPixmap(pixmap)
                     self.previewDialog.ratio = ratio
             else:
-                self.previewDialog.imageLabel.setProperty("photo_url", None)
+                self.previewDialog.imageLabel.hide()
+                self.previewDialog.textEdit.show()
+                self.previewDialog.textEdit.setText(hovered_type)
+                self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
 
-        if not self.previewDialog.isHidden():
-            if item.info().type() in ("Message", "Forward"):
-                if self.flag.hastext in item.info().flags:
-                    self.previewDialog.imageLabel.hide()
-                    self.previewDialog.textEdit.show()
-                    self.previewDialog.textEdit.setText(item.info().text_info.text)
-                    self.previewDialog.ratio = 1.6
-                    self.previewDialog.imageLabel.setProperty("photo_url", None)
-                if self.flag.hasattachment in item.info().flags:
-                    if item.childCount() == 1:
-                        set_preview(self, item.child(0))
-            elif item.info().type() == "Attachment":
-                set_preview(self, item)
-        self.set_preview_geometry()
+        def set_preview_multiatt(self):
+            hovered_type = "multiatt"
+            text = "<НЕСКОЛЬКО ВЛОЖЕНИЙ>"
+            self.hovered = (hovered_type, text)
+            self.previewDialog.imageLabel.hide()
+            self.previewDialog.textEdit.show()
+            self.previewDialog.textEdit.setText(text)
+            self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
+
+        def set_preview_text(self, text_obj):
+            hovered_type = "text"
+            text = text_obj.info().text_info.text
+            self.hovered = (hovered_type, text)
+            self.previewDialog.imageLabel.hide()
+            self.previewDialog.textEdit.show()
+            self.previewDialog.textEdit.setText(text)
+            self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
+
+        def set_preview_notext(self):
+            hovered_type = "notext"
+            text = "<БЕЗ ТЕКСТА>"
+            self.hovered = (hovered_type, text)
+            self.previewDialog.imageLabel.hide()
+            self.previewDialog.textEdit.show()
+            self.previewDialog.textEdit.setText(text)
+            self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
+
+        set_preview(self, item)
 
     def set_preview_geometry(self):
         pd = self.previewDialog
         mtree = self.messageTree
-        x = mtree.mapTo(self, mtree.geometry().bottomRight()).x()-pd.psize()-30
-        y = mtree.mapTo(self, mtree.geometry().bottomRight()).y()-130-30
-        if pd.imageLabel.isHidden():
-            pd.setGeometry(QRect(x, y, pd.psize(), 130))
-        else:
-            pd.adjustSize()
-            w, h = pd.size().width(), pd.size().height()
-            pd.setGeometry(x, y, w, h)
+        margin = 30
+        max_height = 130
+        border = 18
+        x = mtree.mapTo(self, mtree.geometry().bottomRight()).x()  # нижний правый угол (x)
+        y = mtree.mapTo(self, mtree.geometry().bottomRight()).y()  # нижний правый угол (y)
+        w = int(pd.ratio * max_height) + border                    # соотношение_сторон * высота + граница
+        h = max_height + border                                    # высота + граница
+        pd.setGeometry(QRect(x-w-margin, y-h-margin, w, h))
+
+    def set_length_geometry(self):
+        x = self.lengthButton.mapTo(self, self.lengthButton.pos()).x() - 200
+        y = self.lengthButton.mapTo(self, self.lengthButton.pos()).y() - 120
+        self.lengthDialog.setGeometry(x, y, 163, 90)
 
     def on_doubleclick(self, item, column):
         item.setSelected(False)
@@ -1064,16 +1068,17 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
 
         # если содержит форварды
         if item.info().forwards:
-            forwards_count = item.childCount()
-            for i in range(forwards_count):
-                fwditem = item.child(i)
-                forward_user = fwditem.info().user_info.userid
-                if forward_user not in self.loaded_userpics:
-                    if fwditem not in self.requested_userpics:
-                        self.requested_userpics.append(fwditem)
-                        self.request_userpic(fwditem)
-                else:
-                    fwditem.setIcon(0, self.loaded_userpics[forward_user])
+            item_count = item.childCount()
+            for i in range(item_count):
+                if item.child(i).info().type() == "Forward":
+                    fwditem = item.child(i)
+                    forward_user = fwditem.info().user_info.userid
+                    if forward_user not in self.loaded_userpics:
+                        if fwditem not in self.requested_userpics:
+                            self.requested_userpics.append(fwditem)
+                            self.request_userpic(fwditem)
+                    else:
+                        fwditem.setIcon(0, self.loaded_userpics[forward_user])
 
 
     def hide_item(self):
