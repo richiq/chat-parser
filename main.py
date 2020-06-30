@@ -25,14 +25,14 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 
 class AbstractDialog(QDialog):
-    def __init__(self, *args):
+    def __init__(self, *args, child):
         super().__init__()
         if args:
-            self.setParent(args[0])
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Widget)
-        self.setModal(False)
-        self.set_animation()
-        self.hide()
+            child.setParent(args[0])
+        child.setWindowFlags(Qt.FramelessWindowHint | Qt.Widget)
+        child.setModal(False)
+        child.set_animation()
+        child.hide()
 
     def set_animation(self):
         self.opacity_effect = QGraphicsOpacityEffect()
@@ -61,7 +61,7 @@ class AbstractDialog(QDialog):
 
 class LengthDialog(AbstractDialog):
     def __init__(self, *args):
-        super().__init__()
+        super(LengthDialog, self).__init__(*args, child=self)
         self.setMinimumSize(QSize(0, 0))
         self.setStyleSheet("""
                            QDialog{background: #363B44; border-radius: 3ex; border: 1px solid #49515A} 
@@ -135,9 +135,9 @@ class LengthDialog(AbstractDialog):
         self.lengthLayout.addWidget(self.min_wordsSpinbox, 0, 2, 1, 1)
 
 
-class PreviewDialog(QDialog):
+class PreviewDialog(AbstractDialog):
     def __init__(self, *args):
-        super().__init__()
+        super(PreviewDialog, self).__init__(*args, child=self)
         self.ratio = 0.0
         self.setStyleSheet("""
                            QDialog{background: #363B44; border-radius: 2ex; border: 0.5px solid #49515A}
@@ -612,57 +612,55 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
         self.voiceButton.setEnabled(state)
 
     def insert_parsed(self, parsed_msgs):
-
-        def message_handling(self, obj, item):
-            tooltip_text = f"{obj.user_info.username}"
-
-            if obj.text_info:
-                text = obj.text_info.text
-                length_words = obj.text_info.length_words
-                length_symbols = obj.text_info.length_symbols_no_spaces
-                tooltip_text += f"\n{length_words} {self.ENDINGS_DICT.get(str(length_words)[-1])[0]}," \
-                                f" {length_symbols} {self.ENDINGS_DICT.get(str(length_symbols)[-1])[1]}"
-            else:
-                text = ""
-
-            if obj.attachments:
-                item.setIcon(1, self.att_header_icon)
-                item.setToolTip(1, "Содержит вложения")
-                for attachment in obj.attachments:
-                    att_child = MessageItem()
-                    att_child.setText(0, f"{attachment.att_type}")
-                    att_child.setData(0, 32, attachment)
-                    item.addChild(att_child)
-
-            if obj.forwards:
-                item.setIcon(2, self.fwd_header_icon)
-                item.setToolTip(2, "Содержит пересланные сообщения")
-                for forward in obj.forwards:
-                    child = MessageItem()
-                    message_handling(self, forward, child)
-                    item.addChild(child)
-
-            item.setToolTip(0, tooltip_text)
-
-            date = f"{obj.date_info.time}\t{obj.date_info.date}"
-
-            item.setText(0, text)
-            item.setText(3, date)
-            item.setIcon(0, QIcon())
-            item.setData(0, 32, obj)
-            if obj.msgid != "fwd":
-                if obj.user_info.userid not in self.loaded_userpics:
-                    if obj not in self.requested_userpics:
-                        self.requested_userpics.append(item)
-                        self.request_userpic(item)
-                else:
-                    item.setIcon(0, self.loaded_userpics.get(obj.user_info.userid))
-
         for message in parsed_msgs:
             item = MessageItem(self.messageTree)
-            message_handling(self, message, item)
+            self.message_process(message, item)
             self.total = self.messageTreeRoot.childCount()
             self.total_messagesLabel.setText(f"Показано {self.total} из {self.total} сообщений")
+
+    def message_process(self, obj, item):
+        tooltip_text = f"{obj.user_info.username}"
+        if obj.text_info:
+            text = obj.text_info.text
+            length_words = obj.text_info.length_words
+            length_symbols = obj.text_info.length_symbols_no_spaces
+            tooltip_text += f"\n{length_words} {self.ENDINGS_DICT.get(str(length_words)[-1])[0]}," \
+                            f" {length_symbols} {self.ENDINGS_DICT.get(str(length_symbols)[-1])[1]}"
+        else:
+            text = ""
+
+        if obj.attachments:
+            item.setIcon(1, self.att_header_icon)
+            item.setToolTip(1, "Содержит вложения")
+            for attachment in obj.attachments:
+                att_child = MessageItem()
+                att_child.setText(0, f"{attachment.att_type}")
+                att_child.setData(0, 32, attachment)
+                item.addChild(att_child)
+
+        if obj.forwards:
+            item.setIcon(2, self.fwd_header_icon)
+            item.setToolTip(2, "Содержит пересланные сообщения")
+            for forward in obj.forwards:
+                child = MessageItem()
+                self.message_process(forward, child)
+                item.addChild(child)
+
+        item.setToolTip(0, tooltip_text)
+
+        date = f"{obj.date_info.time}\t{obj.date_info.date}"
+
+        item.setText(0, text)
+        item.setText(3, date)
+        item.setIcon(0, QIcon())
+        item.setData(0, 32, obj)
+        if obj.msgid != "fwd":
+            if obj.user_info.userid not in self.loaded_userpics:
+                if obj not in self.requested_userpics:
+                    self.requested_userpics.append(item)
+                    self.request_userpic(item)
+            else:
+                item.setIcon(0, self.loaded_userpics.get(obj.user_info.userid))
 
     def loading_icon_update(self):
 
@@ -974,75 +972,70 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
             self.preview_handling(item)
 
     def preview_handling(self, item):
+        if not self.previewDialog.isHidden():
+            if item.info().type() in ("Message", "Forward"):
+                if self.flag.hastext in item.info().flags:
+                    self.set_preview_text(item)
+                if self.flag.notext in item.info().flags:
+                    if self.flag.hasattachment in item.info().flags:
+                        if item.childCount() == 1:
+                            self.set_preview_attachment(item.child(0))
+                        elif item.childCount() > 1:
+                            if self.flag.hasforward not in item.info().flags:
+                                self.set_preview_multiatt()
+                    else:
+                        self.set_preview_notext()
+            elif item.info().type() == "Attachment":
+                self.set_preview_attachment(item)
+            self.set_preview_geometry()
 
-        def set_preview(self, item):
-            if not self.previewDialog.isHidden():
-                if item.info().type() in ("Message", "Forward"):
-                    if self.flag.hastext in item.info().flags:
-                        set_preview_text(self, item)
-                    if self.flag.notext in item.info().flags:
-                        if self.flag.hasattachment in item.info().flags:
-                            if item.childCount() == 1:
-                                set_preview_attachment(self, item.child(0))
-                            elif item.childCount() > 1:
-                                if self.flag.hasforward not in item.info().flags:
-                                    set_preview_multiatt(self)
-                        else:
-                            set_preview_notext(self)
-
-                elif item.info().type() == "Attachment":
-                    set_preview_attachment(self, item)
-                self.set_preview_geometry()
-
-        def set_preview_attachment(self, att_obj):
-            hovered_type = att_obj.info().att_type
-            url = att_obj.info().att_link
-            self.hovered = (hovered_type, url)
-            if hovered_type == "att_photo":
-                self.previewDialog.textEdit.hide()
-                self.previewDialog.imageLabel.show()
-                if url not in self.loaded_photos:
-                    if url not in self.requested_photos:
-                        self.requested_photos.append(url)
-                        self.request_photo(url)
-                else:
-                    pixmap, ratio = self.loaded_photos.get(url)
-                    self.previewDialog.imageLabel.setPixmap(pixmap)
-                    self.previewDialog.ratio = ratio
+    def set_preview_attachment(self, att_obj):
+        hovered_type = att_obj.info().att_type
+        url = att_obj.info().att_link
+        self.hovered = (hovered_type, url)
+        if hovered_type == "att_photo":
+            self.previewDialog.textEdit.hide()
+            self.previewDialog.imageLabel.show()
+            if url not in self.loaded_photos:
+                if url not in self.requested_photos:
+                    self.requested_photos.append(url)
+                    self.request_photo(url)
             else:
-                self.previewDialog.imageLabel.hide()
-                self.previewDialog.textEdit.show()
-                self.previewDialog.textEdit.setText(hovered_type)
-                self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
-
-        def set_preview_multiatt(self):
-            hovered_type = "multiatt"
-            text = "<НЕСКОЛЬКО ВЛОЖЕНИЙ>"
-            self.hovered = (hovered_type, text)
+                pixmap, ratio = self.loaded_photos.get(url)
+                self.previewDialog.imageLabel.setPixmap(pixmap)
+                self.previewDialog.ratio = ratio
+        else:
             self.previewDialog.imageLabel.hide()
             self.previewDialog.textEdit.show()
-            self.previewDialog.textEdit.setText(text)
+            self.previewDialog.textEdit.setText(hovered_type)
             self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
 
-        def set_preview_text(self, text_obj):
-            hovered_type = "text"
-            text = text_obj.info().text_info.text
-            self.hovered = (hovered_type, text)
-            self.previewDialog.imageLabel.hide()
-            self.previewDialog.textEdit.show()
-            self.previewDialog.textEdit.setText(text)
-            self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
+    def set_preview_multiatt(self):
+        hovered_type = "multiatt"
+        text = "<НЕСКОЛЬКО ВЛОЖЕНИЙ>"
+        self.hovered = (hovered_type, text)
+        self.previewDialog.imageLabel.hide()
+        self.previewDialog.textEdit.show()
+        self.previewDialog.textEdit.setText(text)
+        self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
 
-        def set_preview_notext(self):
-            hovered_type = "notext"
-            text = "<БЕЗ ТЕКСТА>"
-            self.hovered = (hovered_type, text)
-            self.previewDialog.imageLabel.hide()
-            self.previewDialog.textEdit.show()
-            self.previewDialog.textEdit.setText(text)
-            self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
+    def set_preview_text(self, text_obj):
+        hovered_type = "text"
+        text = text_obj.info().text_info.text
+        self.hovered = (hovered_type, text)
+        self.previewDialog.imageLabel.hide()
+        self.previewDialog.textEdit.show()
+        self.previewDialog.textEdit.setText(text)
+        self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
 
-        set_preview(self, item)
+    def set_preview_notext(self):
+        hovered_type = "notext"
+        text = "<БЕЗ ТЕКСТА>"
+        self.hovered = (hovered_type, text)
+        self.previewDialog.imageLabel.hide()
+        self.previewDialog.textEdit.show()
+        self.previewDialog.textEdit.setText(text)
+        self.previewDialog.ratio = 1.6  # соотношение сторон, когда текст (1.6:1)
 
     def set_preview_geometry(self):
         pd = self.previewDialog
@@ -1117,9 +1110,7 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
         self.lengthButton.setCheckable(False)
         if self.previewDialog.isHidden():
             self.previewDialog.show()
-            x = self.messageTree.mapTo(self, self.messageTree.geometry().bottomRight()).x()-200-30
-            y = self.messageTree.mapTo(self, self.messageTree.geometry().bottomRight()).y()-130-30
-            self.previewDialog.setGeometry(QRect(x, y, 200, 130))
+            self.set_preview_geometry()
             self.attachmentButton.setEnabled(True)
             self.forwardButton.setEnabled(True)
             self.graffitiButton.setEnabled(True)

@@ -8,12 +8,12 @@ from lxml import etree
 
 userpic_urls: dict = {}
 analysis_todo: dict = {}
-flags = """
+default_flags = """
 notext hastext hasemoji noemoji noattachment
 hasattachment graffiti sticker voice 
 noforward hasforward isforward
 """
-flag = Flags("Message Flags", flags)
+flag = Flags("Message Flags", default_flags)
 
 
 class Object:
@@ -78,6 +78,7 @@ def parse_file(file_path: str, batch_amount: int):
                             print(f"Пропарсил {batch_amount} сообщений за {round(time.perf_counter()-pt1, 3)}")
                             pt1 = time.perf_counter()
 
+                            global analysis_todo
                             analysis_dict = analyse(analysis_todo)
                             analysis_todo.clear()
 
@@ -103,44 +104,66 @@ def msg_amount(elem):
 
 
 def parse_message(message_item):
-    flags = flag.no_flags
     # получение msgid
     if "id" in message_item.attrib:
         msgid = message_item.attrib["id"]
     else:
         msgid = "fwd"
-        flags = flags | flag.isforward
 
-    # получение user_info
-    upic_contents = message_item.find(".div[@class='upic']*")
     from_contents = message_item.findall(".div[@class='from']*")
 
-    userpic = upic_contents.attrib["src"]
+    user_info = get_user_info(message_item, from_contents, msgid)
+    date_info = get_date_info(from_contents, msgid)
+    text_info = get_text_info(message_item)
+    attachments = get_attachments(message_item)
+    forwards = get_forwards(message_item)
+    flags = get_flags(msgid, text_info, attachments, forwards)
+
+    global analysis_todo
+    analysis_todo[msgid] = {"user_info": user_info, "date_info": date_info,
+                            "text_info": text_info, "attachments": attachments,
+                            "forwards": forwards}
+
+    message = {"msgid": msgid, "user_info": user_info,
+               "date_info": date_info, "text_info": text_info,
+               "attachments": attachments, "forwards": forwards, "flags": flags}
+
+    if msgid == "fwd":
+        return Forward(message)
+    else:
+        return Message(message)
+
+
+def get_user_info(message_item, from_contents, msgid):
+    upic_contents = message_item.find(".div[@class='upic']*")
+    userid = from_contents[1].text
     username = from_contents[0].text
     userlink = from_contents[1].attrib["href"]
-    userid = from_contents[1].text
+    userpic = upic_contents.attrib["src"]
 
     global userpic_urls
     if userid not in userpic_urls and msgid != "fwd":
         userpic_urls[userid] = userpic
 
-    user_info = UserInfo({"userid": userid,
-                          "username": username,
-                          "userlink": userlink,
-                          "userpic": userpic})
+    return UserInfo({"userid": userid,
+                     "username": username,
+                     "userlink": userlink,
+                     "userpic": userpic})
 
-    # получение date_info
+
+def get_date_info(from_contents, msgid):
     if msgid == "fwd":
         date_raw = from_contents[1].tail.strip()
     else:
         date_raw = from_contents[2].text
     date = datetime.datetime.strptime(date_raw, "%Y.%m.%d %X").strftime("%d.%m.%Y")
-    time = datetime.datetime.strptime(date_raw, "%Y.%m.%d %X").strftime("%X")
+    time_ = datetime.datetime.strptime(date_raw, "%Y.%m.%d %X").strftime("%X")
 
-    date_info = DateInfo({"date": date,
-                          "time": time})
+    return DateInfo({"date": date,
+                     "time": time_})
 
-    # получение text info
+
+def get_text_info(message_item):
     msg_body = message_item.find(".div[@class='msg_body']")
 
     if msg_body is not None:
@@ -166,71 +189,63 @@ def parse_message(message_item):
         length_words = len(text.split())
         length_symbols_spaces = len(text)
         length_symbols_no_spaces = len("".join(text.split()))
-
-        if len(emoji) > 0:
-            flags = flags | flag.hasemoji
-        else:
-            emoji = None
-            #flags = flags | flag.noemoji
-
         if not length_symbols_no_spaces == 0:
-            flags = flags | flag.hastext
             text_info = TextInfo({"text": text,
                                   "length_words": length_words,
                                   "length_symbols_spaces": length_symbols_spaces,
                                   "length_symbols_no_spaces": length_symbols_no_spaces,
                                   "emoji": emoji})
         else:
-            flags = flags | flag.notext
             text_info = None
     else:
-        flags = flags | flag.notext
         text_info = None
+    return text_info
 
-    # получение attachments
+
+def get_attachments(message_item):
     if message_item.find(".div[@class='attacments']") is not None:
-        try:
-            attachments = attachments_info(message_item)
-            flags = flags | flag.hasattachment
-            if len(attachments) == 1:
-                if attachments[0].att_type == "att_sticker":
-                    flags = flags | flag.sticker
-                elif attachments[0].att_type == "att_graffiti":
-                    flags = flags | flag.graffiti
-                elif attachments[0].att_type == "att_voice":
-                    flags = flags | flag.voice
-        except:
-            print(msgid, text_info)
-            raise
-        #print(msgid, attachments)
+        return parse_attachments(message_item)
     else:
-        attachments = None
-        #flags = flags | flag.noattachment
+        return None
 
-    # получение forwards
+
+def get_forwards(message_item):
     if message_item.find(".div[@class='fwd']") is not None:
         forward = message_item.find(".div[@class='fwd']")
-        forwards = parse_forward(forward)
-        flags = flags | flag.hasforward
+        return parse_forward(forward)
     else:
-        forwards = None
-        #flags = flags | flag.noforward
+        return None
 
-    analysis_todo[msgid] = {"user_info": user_info, "date_info": date_info,
-                       "text_info": text_info, "attachments": attachments,
-                       "forwards": forwards}
+
+def get_flags(msgid, text_info, attachments, forwards):
+    flags = flag.no_flags
 
     if msgid == "fwd":
-        return Forward({"msgid": msgid, "user_info": user_info,
-                        "date_info": date_info, "text_info": text_info,
-                        "attachments": attachments, "forwards": forwards, "flags": flags})
+        flags = flags | flag.isforward
+
+    if text_info:
+        flags = flags | flag.hastext
+        if text_info.emoji:
+            flags = flags | flag.hasemoji
     else:
-        return Message({"msgid": msgid, "user_info": user_info,
-                        "date_info": date_info, "text_info": text_info,
-                        "attachments": attachments, "forwards": forwards, "flags": flags})
+        flags = flags | flag.notext
+
+    if attachments:
+        if len(attachments) == 1:
+            if attachments[0].att_type == "att_sticker":
+                flags = flags | flag.sticker
+            elif attachments[0].att_type == "att_graffiti":
+                flags = flags | flag.graffiti
+            elif attachments[0].att_type == "att_voice":
+                flags = flags | flag.voice
+
+    if forwards:
+        flags = flags | flag.hasforward
+
+    return flags
 
 
-def attachments_info(message_item):
+def parse_attachments(message_item):
     attachments_list = []
     for att in message_item.xpath("div"):
         if "class" in att.attrib:
@@ -326,14 +341,14 @@ def attachment_info(attachment):
 
         else:
             att_link = "?"
-            att_link_text = "Тип %s не поддерживается" % att_type
+            att_link_text = f"Тип {att_type} не поддерживается"
             return {"att_type": att_type,
                     "att_link": att_link,
                     "att_link_text": att_link_text}
 
 
 def attachment_type(attachment):
-    att_type = re.sub("[^\w]", " ",  attachment.xpath("*")[0].attrib["class"]).split()[1]
+    att_type = re.sub("[^\w]", " ", attachment.xpath("*")[0].attrib["class"]).split()[1]
     return att_type
 
 
