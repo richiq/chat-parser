@@ -112,29 +112,29 @@ def parse_message(message_item):
 
     from_contents = message_item.findall(".div[@class='from']*")
 
-    user_info = get_user_info(message_item, from_contents, msgid)
-    date_info = get_date_info(from_contents, msgid)
-    text_info = get_text_info(message_item)
-    attachments = get_attachments(message_item)
-    forwards = get_forwards(message_item)
-    flags = get_flags(msgid, text_info, attachments, forwards)
+    user_info = parse_user_info(message_item, from_contents, msgid)
+    date_info = parse_date_info(from_contents, msgid)
+    text_info = parse_text_info(message_item)
+    attachments = parse_attachments(message_item)
+    forwards = parse_forwards(message_item)
+    flags = parse_flags(msgid, text_info, attachments, forwards)
+
+    message_info = {"user_info": user_info, "date_info": date_info,
+                    "text_info": text_info, "attachments": attachments,
+                    "forwards": forwards}
 
     global analysis_todo
-    analysis_todo[msgid] = {"user_info": user_info, "date_info": date_info,
-                            "text_info": text_info, "attachments": attachments,
-                            "forwards": forwards}
-
-    message = {"msgid": msgid, "user_info": user_info,
-               "date_info": date_info, "text_info": text_info,
-               "attachments": attachments, "forwards": forwards, "flags": flags}
+    analysis_todo[msgid] = message_info
+    message_info.update({"msgid": msgid,
+                         "flags": flags})
 
     if msgid == "fwd":
-        return Forward(message)
+        return Forward(message_info)
     else:
-        return Message(message)
+        return Message(message_info)
 
 
-def get_user_info(message_item, from_contents, msgid):
+def parse_user_info(message_item, from_contents, msgid):
     upic_contents = message_item.find(".div[@class='upic']*")
     userid = from_contents[1].text
     username = from_contents[0].text
@@ -151,7 +151,7 @@ def get_user_info(message_item, from_contents, msgid):
                      "userpic": userpic})
 
 
-def get_date_info(from_contents, msgid):
+def parse_date_info(from_contents, msgid):
     if msgid == "fwd":
         date_raw = from_contents[1].tail.strip()
     else:
@@ -163,94 +163,56 @@ def get_date_info(from_contents, msgid):
                      "time": time_})
 
 
-def get_text_info(message_item):
+def parse_text_info(message_item):
     msg_body = message_item.find(".div[@class='msg_body']")
 
     if msg_body is not None:
-        text = ""
-        emoji = []
-
-        msg_body_list = msg_body.xpath(".//node()")
-
-        for i in msg_body_list:
-            if type(i) == etree._Element and i.tag == "img":
-                text += i.attrib["alt"]
-                emoji.append(i.attrib["alt"])
-            elif type(i) == etree._Element and i.tag == "br":
-                text += "\n"
-            elif type(i) == etree._Element and i.tag == "a":
-                text += i.text
-            elif type(i) == etree._ElementUnicodeResult:
-                text += i
-            else:
-                print(f"\n\n\n\n!!! {type(i)} !!!\n\n\n\n")
-                raise TypeError
-
+        text, emoji = get_text_emoji(msg_body)
         length_words = len(text.split())
         length_symbols_spaces = len(text)
         length_symbols_no_spaces = len("".join(text.split()))
         if not length_symbols_no_spaces == 0:
-            text_info = TextInfo({"text": text,
-                                  "length_words": length_words,
-                                  "length_symbols_spaces": length_symbols_spaces,
-                                  "length_symbols_no_spaces": length_symbols_no_spaces,
-                                  "emoji": emoji})
+            return TextInfo({"text": text,
+                             "length_words": length_words,
+                             "length_symbols_spaces": length_symbols_spaces,
+                             "length_symbols_no_spaces": length_symbols_no_spaces,
+                             "emoji": emoji})
         else:
-            text_info = None
-    else:
-        text_info = None
-    return text_info
-
-
-def get_attachments(message_item):
-    if message_item.find(".div[@class='attacments']") is not None:
-        return parse_attachments(message_item)
+            return None
     else:
         return None
 
 
-def get_forwards(message_item):
-    if message_item.find(".div[@class='fwd']") is not None:
-        forward = message_item.find(".div[@class='fwd']")
-        return parse_forward(forward)
-    else:
-        return None
-
-
-def get_flags(msgid, text_info, attachments, forwards):
-    flags = flag.no_flags
-
-    if msgid == "fwd":
-        flags = flags | flag.isforward
-
-    if text_info:
-        flags = flags | flag.hastext
-        if text_info.emoji:
-            flags = flags | flag.hasemoji
-    else:
-        flags = flags | flag.notext
-
-    if attachments:
-        if len(attachments) == 1:
-            if attachments[0].att_type == "att_sticker":
-                flags = flags | flag.sticker
-            elif attachments[0].att_type == "att_graffiti":
-                flags = flags | flag.graffiti
-            elif attachments[0].att_type == "att_voice":
-                flags = flags | flag.voice
-
-    if forwards:
-        flags = flags | flag.hasforward
-
-    return flags
+def get_text_emoji(msg_body):
+    msg_body_list = msg_body.xpath(".//node()")
+    text = ""
+    emoji = []
+    for i in msg_body_list:
+        if type(i) == etree._Element and i.tag == "img":
+            text += i.attrib["alt"]
+            emoji.append(i.attrib["alt"])
+        elif type(i) == etree._Element and i.tag == "br":
+            text += "\n"
+        elif type(i) == etree._Element and i.tag == "a":
+            text += i.text
+        elif type(i) == etree._ElementUnicodeResult:
+            text += i
+    return text, emoji
 
 
 def parse_attachments(message_item):
+    if message_item.find(".div[@class='attacments']") is not None:
+        return get_attachments(message_item)
+    else:
+        return None
+
+
+def get_attachments(message_item):
     attachments_list = []
     for att in message_item.xpath("div"):
         if "class" in att.attrib:
             if att.attrib["class"] in ("attacment", "attacment attb_link"):
-                attachment = attachment_info(att)
+                attachment = parse_attachment(att)
                 attachments_list.append(Attachment(attachment))
         elif "style" in att.attrib:
             attachments_list.append(Attachment({"att_type": "conf_userpic_update",
@@ -262,103 +224,155 @@ def parse_attachments(message_item):
     return attachments_list
 
 
-def attachment_info(attachment):
+def parse_attachment(attachment):
     # если аттачмент преобразован (нет тэга <pre>)
-    if attachment.find(".pre") is None:
+    if not attachment.find(".pre"):
         if attachment.attrib["class"] == "attacment":
-            attachment_contents = attachment.xpath("*")
-            att_type = attachment_type(attachment)
-            att_link = attachment_contents[1].attrib["href"]
-            att_link_text = attachment_contents[1].text
-            graffiti_pattern = re.compile(r"\w{8}-\w{4}-\w{4}-\w{4}-\w{12}\.png")
-            voice_pattern = re.compile(r"(audio_msg|voice_message|audiocomment|(\d+_\d+))\.(opus|webm|3gp|ogg)")
-            att_wall_attachments = []
-
-            if att_type == "att_doc":
-                if graffiti_pattern.match(att_link_text):
-                    att_type = "att_graffiti"
-                elif voice_pattern.match(att_link_text):
-                    att_type = "att_voice"
-
-            if att_type == "att_wall":
-                if not attachment_contents[2].text == " ":
-                    att_wall_text = attachment_contents[2].text
-                else:
-                    att_wall_text = "<Без текста>"
-
-                for wall_attachment in attachment.findall("./div[@class='attacment']") or \
-                                       attachment.findall(".div[@class='attacment attb_link']"):
-                    att_wall_attachments.append(attachment_info(wall_attachment))
-
-                return {"att_type": att_type,
-                        "att_link": att_link,
-                        "att_link_text": att_link_text,
-                        "att_wall_text": att_wall_text,
-                        "att_wall_attachments": att_wall_attachments}
-            else:
-                return {"att_type": att_type,
-                        "att_link": att_link,
-                        "att_link_text": att_link_text}
-        # если плейлист
+            return get_att_info(attachment)
         elif attachment.attrib["class"] == "attacment attb_link":
-            attachment_contents = attachment.xpath("*")
-            att_type = "attb_link"
-            att_link = attachment_contents[1].attrib["href"]
-            att_link_text = attachment_contents[1].xpath("text()")[0]
-            return {"att_type": att_type,
-                    "att_link": att_link,
-                    "att_link_text": att_link_text}
-
-    # если аттачмент не преобразован
+            return get_attb_link(attachment)
     else:
-        data = json.loads(attachment.find(".pre").text, strict=False)  # json в словарь
-        att_type = data["type"]
-
-        if att_type == "market":
-            owner = str(data["market"]["owner_id"] * -1)
-            product_id = str(data["market"]["id"])
-            att_link = "https://vk.com/market-%s?w=product-%s_%s" % (owner, owner, product_id)
-            att_link_text = data["market"]["title"]
-            return {"att_type": att_type,
-                    "att_link": att_link,
-                    "att_link_text": att_link_text}
-
-        elif att_type == "poll":
-            owner = str(data["poll"]["owner_id"] * -1)
-            poll_id = str(data["poll"]["id"])
-            att_link = "https://vk.com/poll%s_%s" % (owner, poll_id)
-            att_link_text = data["poll"]["question"]
-            return {"att_type": att_type,
-                    "att_link": att_link,
-                    "att_link_text": att_link_text}
-
-        elif att_type == "photos_list":
-            att_link = "https://vk.com/photo%s" % (data["photos_list"][0])
-            att_link_text = "Фотоальбом"
-            return {"att_type": att_type,
-                    "att_link": att_link,
-                    "att_link_text": att_link_text}
-
-        else:
-            att_link = "?"
-            att_link_text = f"Тип {att_type} не поддерживается"
-            return {"att_type": att_type,
-                    "att_link": att_link,
-                    "att_link_text": att_link_text}
+        return get_pre(attachment)
 
 
-def attachment_type(attachment):
-    att_type = re.sub("[^\w]", " ", attachment.xpath("*")[0].attrib["class"]).split()[1]
+def get_att_info(attachment):
+    attachment_contents = attachment.xpath("*")
+    att_link = attachment_contents[1].attrib["href"]
+    att_link_text = attachment_contents[1].text
+    att_type = get_att_type(attachment, att_link_text)
+    att_info = {"att_type": att_type,
+                "att_link": att_link,
+                "att_link_text": att_link_text}
+    if att_type == "att_wall":
+        att_info.update(get_att_wall(attachment, attachment_contents))
+
+    return att_info
+
+
+def get_att_type(attachment, att_link_text):
+    att_type = re.sub(r"[^\w]", " ", attachment.xpath("*")[0].attrib["class"]).split()[1]
+    graffiti_pattern = re.compile(r"\w{8}-\w{4}-\w{4}-\w{4}-\w{12}\.png")
+    voice_pattern = re.compile(r"(audio_msg|voice_message|audiocomment|(\d+_\d+))\.(opus|webm|3gp|ogg)")
+
+    if att_type == "att_doc":
+        if graffiti_pattern.match(att_link_text):
+            att_type = "att_graffiti"
+            return att_type
+        elif voice_pattern.match(att_link_text):
+            att_type = "att_voice"
+            return att_type
     return att_type
 
 
-def parse_forward(head_tag):
+def get_att_wall(attachment, attachment_contents):
+    if not attachment_contents[2].text == " ":
+        att_wall_text = attachment_contents[2].text
+    else:
+        att_wall_text = "<Без текста>"
+
+    att_wall_attachments = []
+    for wall_attachment in attachment.findall("./div[@class='attacment']") or \
+                           attachment.findall(".div[@class='attacment attb_link']"):
+        att_wall_attachments.append(parse_attachment(wall_attachment))
+
+    return {"att_wall_text": att_wall_text,
+            "att_wall_attachments": att_wall_attachments}
+
+
+def get_attb_link(attachment_contents):
+
+    att_type = "attb_link"
+    att_link = attachment_contents[1].attrib["href"]
+    att_link_text = attachment_contents[1].xpath("text()")[0]
+    return {"att_type": att_type,
+            "att_link": att_link,
+            "att_link_text": att_link_text}
+
+
+def get_pre(attachment):
+    data = json.loads(attachment.find(".pre").text, strict=False)  # json в словарь
+    att_type = data["type"]
+    pre_info = {"att_type": att_type}
+
+    if att_type == "market":
+        return pre_info.update(get_pre_market(data))
+
+    elif att_type == "poll":
+        return pre_info.update(get_pre_poll(data))
+
+    elif att_type == "photos_list":
+        return pre_info.update(get_pre_photos_list(data))
+    else:
+        return get_pre_unknown(att_type)
+
+
+def get_pre_market(data):
+    owner = str(data["market"]["owner_id"] * -1)
+    product_id = str(data["market"]["id"])
+    att_link = "https://vk.com/market-%s?w=product-%s_%s" % (owner, owner, product_id)
+    att_link_text = data["market"]["title"]
+    return {"att_link": att_link,
+            "att_link_text": att_link_text}
+
+
+def get_pre_poll(data):
+    owner = str(data["poll"]["owner_id"] * -1)
+    poll_id = str(data["poll"]["id"])
+    att_link = "https://vk.com/poll%s_%s" % (owner, poll_id)
+    att_link_text = data["poll"]["question"]
+    return {"att_link": att_link,
+            "att_link_text": att_link_text}
+
+
+def get_pre_photos_list(data):
+    att_link = "https://vk.com/photo%s" % (data["photos_list"][0])
+    att_link_text = "Фотоальбом"
+    return {"att_link": att_link,
+            "att_link_text": att_link_text}
+
+
+def get_pre_unknown(att_type):
+    att_link = "?"
+    att_link_text = f"Тип {att_type} не поддерживается"
+    return {"att_type": att_type,
+            "att_link": att_link,
+            "att_link_text": att_link_text}
+
+
+def parse_forwards(message_item):
+    if message_item.find(".div[@class='fwd']") is not None:
+        forward = message_item.find(".div[@class='fwd']")
+        return get_forwards(forward)
+    else:
+        return None
+
+
+def get_forwards(head_tag):
     forwards = head_tag.xpath("*")
     forwards_list = []
     for forward in forwards:
         forward_info = parse_message(forward)
         forwards_list.append(forward_info)
     return forwards_list
+
+
+def parse_flags(msgid, text_info, attachments, forwards):
+    att_conditions = bool(attachments) and len(attachments) == 1
+    flag_conditions = {flag.isforward: msgid == "fwd",
+                       flag.hastext: bool(text_info),
+                       flag.hasemoji: bool(text_info) and bool(text_info.emoji),
+                       flag.notext: text_info is None,
+                       flag.hasattachment: bool(attachments),
+                       flag.sticker: att_conditions and attachments[0].att_type == "att_sticker",
+                       flag.graffiti: att_conditions and attachments[0].att_type == "att_graffiti",
+                       flag.voice: att_conditions and attachments[0].att_type == "att_voice",
+                       flag.hasforward: bool(forwards)}
+
+    flags = flag.no_flags
+    for fl, cond in flag_conditions.items():
+        if cond:
+            flags = flags | fl
+    return flags
 
 
 def analyse(todo: dict):
