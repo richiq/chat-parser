@@ -1,27 +1,22 @@
 import sys
-import ssl
 import time
-import urllib.request
 import parser_core as parser
 import gui
 import gui_res
 import icons_res
 
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QPainterPath, QMovie, QImage
-from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PyQt5.QtCore import (
-                                QTextStream, QFile, Qt, QSize, QPropertyAnimation, QTimer, QAbstractAnimation,
-                                pyqtSignal, pyqtSlot, QObject, QRect, QThread, QUrl, QVariant, QVariantAnimation
+                                QTextStream, QFile, Qt, QSize, QPropertyAnimation, QTimer,
+                                pyqtSignal, pyqtSlot, QObject, QRect, QThread, QUrl, QVariant
                             )
 
 from PyQt5.QtWidgets import (
-                                QDialog, QGraphicsOpacityEffect, QVBoxLayout, QTextEdit, QSizePolicy, QMainWindow,
+                                QDialog, QGraphicsOpacityEffect, QVBoxLayout, QTextEdit, QMainWindow,
                                 QTreeWidgetItem, QGridLayout, QWidget, QComboBox, QSpinBox, QCheckBox, QLabel,
                                 QApplication, QFileDialog, QButtonGroup, QMenu
                             )
-
-
-ssl._create_default_https_context = ssl._create_unverified_context
 
 
 class AbstractDialog(QDialog):
@@ -31,10 +26,9 @@ class AbstractDialog(QDialog):
             child.setParent(args[0])
         child.setWindowFlags(Qt.FramelessWindowHint | Qt.Widget)
         child.setModal(False)
-        child.set_animation()
         child.hide()
 
-    def set_animation(self):
+    def _set_animation(self):
         self.opacity_effect = QGraphicsOpacityEffect()
         self.opacity_effect.setOpacity(0)
         self.setGraphicsEffect(self.opacity_effect)
@@ -67,9 +61,10 @@ class LengthDialog(AbstractDialog):
                            QDialog{background: #363B44; border-radius: 3ex; border: 1px solid #49515A} 
                            QPushButton{border: none}
                            """)
-        self.set_widgets()
+        self._set_animation()
+        self._set_widgets()
 
-    def set_widgets(self):
+    def _set_widgets(self):
         self.lengthWidget = QWidget(self)
         self.lengthLayout = QGridLayout(self.lengthWidget)
         self.lengthLayout.setObjectName("lengthLayout")
@@ -143,9 +138,10 @@ class PreviewDialog(AbstractDialog):
                            QDialog{background: #363B44; border-radius: 2ex; border: 0.5px solid #49515A}
                            QTextEdit{border-radius: 2ex;}
                            """)
-        self.set_widgets()
+        self._set_animation()
+        self._set_widgets()
 
-    def set_widgets(self):
+    def _set_widgets(self):
         self.textEdit = QTextEdit(self)
         self.textEdit.setReadOnly(True)
         self.imageLabel = QLabel(self)
@@ -194,11 +190,6 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
     def showEvent(self, event):
         tx, ty, tw, th = self.testButton.geometry().getRect()
         self.testButton.setGeometry(self.main_tabWidget.width() - 210, ty, tw, th)
-
-        self.show_anim = QPropertyAnimation(self, b"windowOpacity")
-        self.show_anim.setStartValue(0)
-        self.show_anim.setEndValue(1)
-        self.show_anim.setDuration(200)
         self.show_anim.start()
 
     def resizeEvent(self, event):
@@ -212,319 +203,316 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
             self.set_preview_geometry()
 
     def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+        self.resize(1116, 690)
+        self.nam = QNetworkAccessManager()
 
-        def init(self):
-            # -- инициализация --#
-            super().__init__()
-            self.setupUi(self)
-            self.resize(1116, 690)
-            self.nam = QNetworkAccessManager()
+        gui_res.qInitResources()
+        icons_res.qInitResources()
 
-            gui_res.qInitResources()
-            icons_res.qInitResources()
+        self._set_vars()
+        self._set_icons()
+        self._set_widgets()
+        self._connect_widgets()
+        self._start_worker()
 
-            set_vars(self)
-            set_icons(self)
-            set_widgets(self)
-            connect_widgets(self)
-            start_worker(self)
+        self.widgets_enabled(False)
+        self.min_wordsCheckbox.setChecked(False)
+        self.min_symbolsCheckbox.setChecked(False)
 
-            self.widgets_enabled(False)
-            self.min_wordsCheckbox.setChecked(False)
-            self.min_symbolsCheckbox.setChecked(False)
+    def _set_vars(self):
+        # -- переменные --#
 
-        def set_vars(self):
-            # -- переменные --#
+        self.doubleclicked = ()  # даблкликнутый айтем
+        self.hovered = ()  # наведенный айтем
+        self.selected = ()  # выбранные айтемы
+        self.lastchecked = ()
 
-            self.doubleclicked = ()  # даблкликнутый айтем
-            self.hovered = ()  # наведенный айтем
-            self.selected = ()  # выбранные айтемы
-            self.lastchecked = ()
+        self.hidden = []  # скрытые пользователем айтемы
+        self.selected = []  # выделенные айтемы
+        self.requested_userpics = []  # айтемы, которым необходимо установить иконку
+        self.requested_photos = []  # фото, которые необходимо загрузить
 
-            self.hidden = []  # скрытые пользователем айтемы
-            self.selected = []  # выделенные айтемы
-            self.requested_userpics = []  # айтемы, которым необходимо установить иконку
-            self.requested_photos = []  # фото, которые необходимо загрузить
+        self.loaded_photos = {}  # словарь с загруженными фото
+        self.loaded_userpics = {}  # словарь с загруженными иконками пользователей
+        self.messages_dict = {}  # словарь со всеми сообщениями
+        self.analysis_dict = {}  # словарь с анализом всего диалога
 
-            self.loaded_photos = {}  # словарь с загруженными фото
-            self.loaded_userpics = {}  # словарь с загруженными иконками пользователей
-            self.messages_dict = {}  # словарь со всеми сообщениями
-            self.analysis_dict = {}  # словарь с анализом всего диалога
+        self.total = 0  # Количество всех сообщений
+        self.shown = 0  # Количество показанных сообщений
 
-            self.total = 0  # Количество всех сообщений
-            self.shown = 0  # Количество показанных сообщений
+        self.min_words = self.min_wordsSpinbox.value()
+        self.min_symbols = self.min_symbolsSpinbox.value()
 
-            self.min_words = self.min_wordsSpinbox.value()
-            self.min_symbols = self.min_symbolsSpinbox.value()
+        self.flag = parser.flag  # флаги
+        self.filterflags = self.flag.no_flags
 
-            self.flag = parser.flag  # флаги
-            self.filterflags = self.flag.no_flags
+        # -- словари для склонения --#
+        self.ENDINGS_DICT = {"0": (" слов", " символов"),  # словарь для склонения слов
+                             "1": (" слово", " символ"),  # (1 слово, 2 символа)
+                             "2": (" слова", " символа"),
+                             "3": (" слова", " символа"),
+                             "4": (" слова", " символа"),
+                             "5": (" слов", " символов"),
+                             "6": (" слов", " символов"),
+                             "7": (" слов", " символов"),
+                             "8": (" слов", " символов"),
+                             "9": (" слов", " символов")}
 
-            # -- словари для склонения --#
-            self.ENDINGS_DICT = {"0": (" слов", " символов"),  # словарь для склонения слов
-                                 "1": (" слово", " символ"),  # (1 слово, 2 символа)
-                                 "2": (" слова", " символа"),
-                                 "3": (" слова", " символа"),
-                                 "4": (" слова", " символа"),
+        self.MIN_ENDINGS_DICT = {"0": (" слов", " символов"),  # словарь для склонения слов
+                                 "1": (" слова", " символа"),  # (Показывать: от 1 слова, 2 символов)
+                                 "2": (" слов", " символов"),
+                                 "3": (" слов", " символов"),
+                                 "4": (" слов", " символов"),
                                  "5": (" слов", " символов"),
                                  "6": (" слов", " символов"),
                                  "7": (" слов", " символов"),
                                  "8": (" слов", " символов"),
                                  "9": (" слов", " символов")}
 
-            self.MIN_ENDINGS_DICT = {"0": (" слов", " символов"),  # словарь для склонения слов
-                                     "1": (" слова", " символа"),  # (Показывать: от 1 слова, 2 символов)
-                                     "2": (" слов", " символов"),
-                                     "3": (" слов", " символов"),
-                                     "4": (" слов", " символов"),
-                                     "5": (" слов", " символов"),
-                                     "6": (" слов", " символов"),
-                                     "7": (" слов", " символов"),
-                                     "8": (" слов", " символов"),
-                                     "9": (" слов", " символов")}
+    def _set_widgets(self):
+        # -- настройки виджетов  --#
 
-        def set_widgets(self):
-            # -- настройки виджетов  --#
+        self.previewDialog = PreviewDialog(self)
+        self.lengthDialog = LengthDialog(self)
 
-            self.previewDialog = PreviewDialog(self)
-            self.lengthDialog = LengthDialog(self)
+        # виджет сообщений
+        self.messageTree.setColumnWidth(0, 330)
+        self.messageTree.setColumnWidth(1, 1)
+        self.messageTree.setColumnWidth(2, 1)
+        self.messageTree.setIconSize(QSize(20, 20))
+        self.messageTree.setRootIsDecorated(False)
+        self.messageTree.setUniformRowHeights(True)
+        self.messageTree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.messageTree.setFocusPolicy(Qt.NoFocus)
 
-            # виджет сообщений
-            self.messageTree.setColumnWidth(0, 330)
-            self.messageTree.setColumnWidth(1, 1)
-            self.messageTree.setColumnWidth(2, 1)
-            self.messageTree.setIconSize(QSize(20, 20))
-            self.messageTree.setRootIsDecorated(False)
-            self.messageTree.setUniformRowHeights(True)
-            self.messageTree.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.messageTree.setFocusPolicy(Qt.NoFocus)
+        self.messageTreeItem = QTreeWidgetItem
+        self.messageTreeRoot = self.messageTree.invisibleRootItem()
 
-            self.messageTreeItem = QTreeWidgetItem
-            self.messageTreeRoot = self.messageTree.invisibleRootItem()
+        self.loading_icon = QMovie("loading.gif")
+        self.loading_icon.stop()
 
-            self.loading_icon = QMovie("loading.gif")
-            self.loading_icon.stop()
+        # вкладка Анализ
+        self.analysis_wordsTree.setRootIsDecorated(False)
+        self.analysis_wordsTree.setUniformRowHeights(True)
+        self.analysis_wordsTreeItem = QTreeWidgetItem
+        self.analysis_wordsTreeRoot = self.analysis_wordsTree.invisibleRootItem()
 
-            # вкладка Анализ
-            self.analysis_wordsTree.setRootIsDecorated(False)
-            self.analysis_wordsTree.setUniformRowHeights(True)
-            self.analysis_wordsTreeItem = QTreeWidgetItem
-            self.analysis_wordsTreeRoot = self.analysis_wordsTree.invisibleRootItem()
+        self.analysis_emojisTree.setRootIsDecorated(False)
+        self.analysis_emojisTree.setUniformRowHeights(True)
+        self.analysis_emojiTreeItem = QTreeWidgetItem
+        self.analysis_emojiTreeRoot = self.analysis_emojisTree.invisibleRootItem()
 
-            self.analysis_emojisTree.setRootIsDecorated(False)
-            self.analysis_emojisTree.setUniformRowHeights(True)
-            self.analysis_emojiTreeItem = QTreeWidgetItem
-            self.analysis_emojiTreeRoot = self.analysis_emojisTree.invisibleRootItem()
+        # кнопки
+        self.testButton.setParent(self.main_tabWidget)
+        self.testButton.setMaximumHeight(17)
 
-            # кнопки
-            self.testButton.setParent(self.main_tabWidget)
-            self.testButton.setMaximumHeight(17)
+        self.undo_menu = QMenu()
+        self.undo_menu.addAction("Вернуть все")
+        self.undoButton.setMenu(self.undo_menu)
+        self.undoButton.setEnabled(False)
+        self.hideButton.setEnabled(False)
 
-            self.undo_menu = QMenu()
-            self.undo_menu.addAction("Вернуть все")
-            self.undoButton.setMenu(self.undo_menu)
-            self.undoButton.setEnabled(False)
-            self.hideButton.setEnabled(False)
+        self.hastextButton.setProperty("flag", self.flag.hastext)
+        self.notextButton.setProperty("flag", self.flag.notext)
+        self.emojiButton.setProperty("flag", self.flag.hasemoji)
+        self.forwardButton.setProperty("flag", self.flag.hasforward)
+        self.attachmentButton.setProperty("flag", self.flag.hasattachment)
+        self.voiceButton.setProperty("flag", self.flag.voice)
+        self.graffitiButton.setProperty("flag", self.flag.graffiti)
+        self.stickerButton.setProperty("flag", self.flag.sticker)
 
-            self.hastextButton.setProperty("flag", self.flag.hastext)
-            self.notextButton.setProperty("flag", self.flag.notext)
-            self.emojiButton.setProperty("flag", self.flag.hasemoji)
-            self.forwardButton.setProperty("flag", self.flag.hasforward)
-            self.attachmentButton.setProperty("flag", self.flag.hasattachment)
-            self.voiceButton.setProperty("flag", self.flag.voice)
-            self.graffitiButton.setProperty("flag", self.flag.graffiti)
-            self.stickerButton.setProperty("flag", self.flag.sticker)
+        self.settings_group = QButtonGroup()
+        self.settings_group.setExclusive(False)
+        self.settings_group.addButton(self.hastextButton, 0)
+        self.settings_group.addButton(self.notextButton, 1)
+        self.settings_group.addButton(self.emojiButton, 2)
+        self.settings_group.addButton(self.forwardButton, 3)
+        self.settings_group.addButton(self.attachmentButton, 4)
+        self.settings_group.addButton(self.stickerButton, 5)
+        self.settings_group.addButton(self.voiceButton, 6)
+        self.settings_group.addButton(self.graffitiButton, 7)
 
-            self.settings_group = QButtonGroup()
-            self.settings_group.setExclusive(False)
-            self.settings_group.addButton(self.hastextButton, 0)
-            self.settings_group.addButton(self.notextButton, 1)
-            self.settings_group.addButton(self.emojiButton, 2)
-            self.settings_group.addButton(self.forwardButton, 3)
-            self.settings_group.addButton(self.attachmentButton, 4)
-            self.settings_group.addButton(self.stickerButton, 5)
-            self.settings_group.addButton(self.voiceButton, 6)
-            self.settings_group.addButton(self.graffitiButton, 7)
+        # анимация появления
+        self.show_anim = QPropertyAnimation(self, b"windowOpacity")
+        self.show_anim.setStartValue(0)
+        self.show_anim.setEndValue(1)
+        self.show_anim.setDuration(200)
 
-            # анимация кнопки настроек
-            self.settingsWidget.setMaximumHeight(0)
-            self.settings_anim = QPropertyAnimation(self.settingsWidget, b"maximumHeight")
-            self.settings_anim.setDuration(100)
-            self.settings_anim.setStartValue(0)
-            self.settings_anim.setEndValue(485)
+        # анимация кнопки настроек
+        self.settingsWidget.setMaximumHeight(0)
+        self.settings_anim = QPropertyAnimation(self.settingsWidget, b"maximumHeight")
+        self.settings_anim.setDuration(100)
+        self.settings_anim.setStartValue(0)
+        self.settings_anim.setEndValue(485)
 
-        def set_icons(self):
-            file_icon = QIcon()
-            # иконка устанавливается через stylesheet
-            self.fileButton.setIcon(file_icon)
-            self.fileButton.setIconSize(QSize(30, 30))
-            self.fileButton.setToolTip("Открыть файл")
+    def _set_icons(self):
+        file_icon = QIcon()
+        # иконка устанавливается через stylesheet
+        self.fileButton.setIcon(file_icon)
+        self.fileButton.setIconSize(QSize(30, 30))
+        self.fileButton.setToolTip("Открыть файл")
 
-            apply_icon = QIcon()
-            # иконка устанавливается через stylesheet
-            self.applyButton.setIcon(apply_icon)
-            self.applyButton.setIconSize(QSize(30, 30))
-            self.applyButton.setToolTip("Применить")
+        apply_icon = QIcon()
+        # иконка устанавливается через stylesheet
+        self.applyButton.setIcon(apply_icon)
+        self.applyButton.setIconSize(QSize(30, 30))
+        self.applyButton.setToolTip("Применить")
 
-            settings_icon = QIcon()
-            settings_icon.addPixmap(QPixmap(":/icons/settings-pressed.svg"), 0, 0)
-            settings_icon.addPixmap(QPixmap(":/icons/settings.svg"), 0, 1)
-            self.settingsButton.setIcon(settings_icon)
-            self.settingsButton.setToolTip("Настройки")
-            self.settingsButton.setIconSize(QSize(30, 30))
+        settings_icon = QIcon()
+        settings_icon.addPixmap(QPixmap(":/icons/settings-pressed.svg"), 0, 0)
+        settings_icon.addPixmap(QPixmap(":/icons/settings.svg"), 0, 1)
+        self.settingsButton.setIcon(settings_icon)
+        self.settingsButton.setToolTip("Настройки")
+        self.settingsButton.setIconSize(QSize(30, 30))
 
-            hastext_icon = QIcon()
-            hastext_icon.addPixmap(QPixmap(":/icons/hastext-enabled-pressed.svg"), 0, 0)
-            hastext_icon.addPixmap(QPixmap(":/icons/hastext-enabled.svg"), 0, 1)
-            hastext_icon.addPixmap(QPixmap(":/icons/hastext-disabled.svg"), 1, 0)
-            hastext_icon.addPixmap(QPixmap(":/icons/hastext-disabled.svg"), 1, 1)
-            self.hastextButton.setIcon(hastext_icon)
-            self.hastextButton.setToolTip("Сообщения с текстом")
+        hastext_icon = QIcon()
+        hastext_icon.addPixmap(QPixmap(":/icons/hastext-enabled-pressed.svg"), 0, 0)
+        hastext_icon.addPixmap(QPixmap(":/icons/hastext-enabled.svg"), 0, 1)
+        hastext_icon.addPixmap(QPixmap(":/icons/hastext-disabled.svg"), 1, 0)
+        hastext_icon.addPixmap(QPixmap(":/icons/hastext-disabled.svg"), 1, 1)
+        self.hastextButton.setIcon(hastext_icon)
+        self.hastextButton.setToolTip("Сообщения с текстом")
 
-            notext_icon = QIcon()
-            notext_icon.addPixmap(QPixmap(":/icons/notext-enabled-pressed.svg"), 0, 0)
-            notext_icon.addPixmap(QPixmap(":/icons/notext-enabled.svg"), 0, 1)
-            notext_icon.addPixmap(QPixmap(":/icons/notext-disabled.svg"), 1, 0)
-            notext_icon.addPixmap(QPixmap(":/icons/notext-disabled.svg"), 1, 1)
-            self.notextButton.setIcon(notext_icon)
-            self.notextButton.setToolTip("Сообщения без текста")
+        notext_icon = QIcon()
+        notext_icon.addPixmap(QPixmap(":/icons/notext-enabled-pressed.svg"), 0, 0)
+        notext_icon.addPixmap(QPixmap(":/icons/notext-enabled.svg"), 0, 1)
+        notext_icon.addPixmap(QPixmap(":/icons/notext-disabled.svg"), 1, 0)
+        notext_icon.addPixmap(QPixmap(":/icons/notext-disabled.svg"), 1, 1)
+        self.notextButton.setIcon(notext_icon)
+        self.notextButton.setToolTip("Сообщения без текста")
 
-            emoji_icon = QIcon()
-            emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled-pressed.svg"), 0, 0)
-            emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled.svg"), 0, 1)
-            emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled-pressed.svg"), 1, 0)
-            emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled.svg"), 1, 1)
-            self.emojiButton.setIcon(emoji_icon)
-            self.emojiButton.setToolTip("Смайлики")
+        emoji_icon = QIcon()
+        emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled-pressed.svg"), 0, 0)
+        emoji_icon.addPixmap(QPixmap(":/icons/emoji-enabled.svg"), 0, 1)
+        emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled-pressed.svg"), 1, 0)
+        emoji_icon.addPixmap(QPixmap(":/icons/emoji-disabled.svg"), 1, 1)
+        self.emojiButton.setIcon(emoji_icon)
+        self.emojiButton.setToolTip("Смайлики")
 
-            length_icon = QIcon()
-            length_icon.addPixmap(QPixmap(":/icons/length-enabled-pressed.svg"), 0, 0)
-            length_icon.addPixmap(QPixmap(":/icons/length-enabled.svg"), 0, 1)
-            length_icon.addPixmap(QPixmap(":/icons/length-disabled.svg"), 1, 0)
-            length_icon.addPixmap(QPixmap(":/icons/length-disabled.svg"), 1, 1)
-            self.lengthButton.setIcon(length_icon)
-            self.lengthButton.setToolTip("Длина сообщений")
+        length_icon = QIcon()
+        length_icon.addPixmap(QPixmap(":/icons/length-enabled-pressed.svg"), 0, 0)
+        length_icon.addPixmap(QPixmap(":/icons/length-enabled.svg"), 0, 1)
+        length_icon.addPixmap(QPixmap(":/icons/length-disabled.svg"), 1, 0)
+        length_icon.addPixmap(QPixmap(":/icons/length-disabled.svg"), 1, 1)
+        self.lengthButton.setIcon(length_icon)
+        self.lengthButton.setToolTip("Длина сообщений")
 
-            forward_icon = QIcon()
-            forward_icon.addPixmap(QPixmap(":/icons/forward-enabled-pressed.svg"), 0, 0)
-            forward_icon.addPixmap(QPixmap(":/icons/forward-enabled.svg"), 0, 1)
-            forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 0)
-            forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 1)
-            self.forwardButton.setIcon(forward_icon)
-            self.forwardButton.setToolTip("Пересланные сообщения")
+        forward_icon = QIcon()
+        forward_icon.addPixmap(QPixmap(":/icons/forward-enabled-pressed.svg"), 0, 0)
+        forward_icon.addPixmap(QPixmap(":/icons/forward-enabled.svg"), 0, 1)
+        forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 0)
+        forward_icon.addPixmap(QPixmap(":/icons/forward-disabled.svg"), 1, 1)
+        self.forwardButton.setIcon(forward_icon)
+        self.forwardButton.setToolTip("Пересланные сообщения")
 
-            attachment_icon = QIcon()
-            attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled-pressed.svg"), 0, 0)  # ВКЛ    и НАЖАТО
-            attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled.svg"), 0, 1)  # ВКЛ    и НЕ НАЖАТО
-            attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 0)  # ВЫКЛ   и НАЖАТО
-            attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 1)  # ВЫКЛ   и НЕ НАЖАТО
-            self.attachmentButton.setIcon(attachment_icon)
-            self.attachmentButton.setToolTip("Вложения")
+        attachment_icon = QIcon()
+        attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled-pressed.svg"), 0, 0)  # ВКЛ    и НАЖАТО
+        attachment_icon.addPixmap(QPixmap(":/icons/attachment-enabled.svg"), 0, 1)  # ВКЛ    и НЕ НАЖАТО
+        attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 0)  # ВЫКЛ   и НАЖАТО
+        attachment_icon.addPixmap(QPixmap(":/icons/attachment-disabled.svg"), 1, 1)  # ВЫКЛ   и НЕ НАЖАТО
+        self.attachmentButton.setIcon(attachment_icon)
+        self.attachmentButton.setToolTip("Вложения")
 
-            voice_icon = QIcon()
-            voice_icon.addPixmap(QPixmap(":/icons/voice-enabled-pressed.svg"), 0, 0)
-            voice_icon.addPixmap(QPixmap(":/icons/voice-enabled.svg"), 0, 1)
-            voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 0)
-            voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 1)
-            self.voiceButton.setIcon(voice_icon)
-            self.voiceButton.setToolTip("Голосовые сообщения")
+        voice_icon = QIcon()
+        voice_icon.addPixmap(QPixmap(":/icons/voice-enabled-pressed.svg"), 0, 0)
+        voice_icon.addPixmap(QPixmap(":/icons/voice-enabled.svg"), 0, 1)
+        voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 0)
+        voice_icon.addPixmap(QPixmap(":/icons/voice-disabled.svg"), 1, 1)
+        self.voiceButton.setIcon(voice_icon)
+        self.voiceButton.setToolTip("Голосовые сообщения")
 
-            self.graffiti_icon = QIcon()
-            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled-pressed.svg"), 0, 0)
-            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled.svg"), 0, 1)
-            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 0)
-            self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 1)
-            self.graffitiButton.setIcon(self.graffiti_icon)
-            self.graffitiButton.setToolTip("Граффити")
+        self.graffiti_icon = QIcon()
+        self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled-pressed.svg"), 0, 0)
+        self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-enabled.svg"), 0, 1)
+        self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 0)
+        self.graffiti_icon.addPixmap(QPixmap(":/icons/graffiti-disabled.svg"), 1, 1)
+        self.graffitiButton.setIcon(self.graffiti_icon)
+        self.graffitiButton.setToolTip("Граффити")
 
-            sticker_icon = QIcon()
-            sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled-pressed.png"), 0, 0)
-            sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled.png"), 0, 1)
-            sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled-pressed.png"), 1, 0)
-            sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled.png"), 1, 1)
-            self.stickerButton.setIcon(sticker_icon)
-            self.stickerButton.setToolTip("Стикеры")
+        sticker_icon = QIcon()
+        sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled-pressed.png"), 0, 0)
+        sticker_icon.addPixmap(QPixmap(":/icons/sticker-enabled.png"), 0, 1)
+        sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled-pressed.png"), 1, 0)
+        sticker_icon.addPixmap(QPixmap(":/icons/sticker-disabled.png"), 1, 1)
+        self.stickerButton.setIcon(sticker_icon)
+        self.stickerButton.setToolTip("Стикеры")
 
-            hide_icon = QIcon()
-            hide_icon.addPixmap(QPixmap(":/icons/hide.svg"))
-            self.hideButton.setIcon(hide_icon)
-            self.hideButton.setToolTip("Скрыть выделенные сообщения")
+        hide_icon = QIcon()
+        hide_icon.addPixmap(QPixmap(":/icons/hide.svg"))
+        self.hideButton.setIcon(hide_icon)
+        self.hideButton.setToolTip("Скрыть выделенные сообщения")
 
-            undo_icon = QIcon()
-            undo_icon.addPixmap(QPixmap(":/icons/undo.svg"))
-            self.undoButton.setIcon(undo_icon)
-            self.undoButton.setToolTip("Показать последнее скрытое")
+        undo_icon = QIcon()
+        undo_icon.addPixmap(QPixmap(":/icons/undo.svg"))
+        self.undoButton.setIcon(undo_icon)
+        self.undoButton.setToolTip("Показать последнее скрытое")
 
-            att_header_pixmap = QPixmap()
-            att_header_pixmap.load(":/icons/attachment-enabled-pressed.svg")
-            att_header_pixmap = att_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
-                                                         Qt.SmoothTransformation)
-            self.att_header_icon = QIcon()
-            self.att_header_icon.addPixmap(att_header_pixmap, QIcon.Selected, QIcon.On)
-            self.messageTree.headerItem().setText(1, "")
-            self.messageTree.headerItem().setIcon(1, self.att_header_icon)
-            self.messageTree.headerItem().setToolTip(1, "Содержит вложения")
+        att_header_pixmap = QPixmap()
+        att_header_pixmap.load(":/icons/attachment-enabled-pressed.svg")
+        att_header_pixmap = att_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
+                                                     Qt.SmoothTransformation)
+        self.att_header_icon = QIcon()
+        self.att_header_icon.addPixmap(att_header_pixmap, QIcon.Selected, QIcon.On)
+        self.messageTree.headerItem().setText(1, "")
+        self.messageTree.headerItem().setIcon(1, self.att_header_icon)
+        self.messageTree.headerItem().setToolTip(1, "Содержит вложения")
 
-            fwd_header_pixmap = QPixmap()
-            fwd_header_pixmap.load(":/icons/forward-enabled-pressed.svg")
-            fwd_header_pixmap = fwd_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
-                                                         Qt.SmoothTransformation)
-            self.fwd_header_icon = QIcon()
-            self.fwd_header_icon.addPixmap(fwd_header_pixmap, QIcon.Selected, QIcon.On)
-            self.messageTree.headerItem().setText(2, "")
-            self.messageTree.headerItem().setIcon(2, self.fwd_header_icon)
-            self.messageTree.headerItem().setToolTip(2, "Содержит пересланные сообщения")
+        fwd_header_pixmap = QPixmap()
+        fwd_header_pixmap.load(":/icons/forward-enabled-pressed.svg")
+        fwd_header_pixmap = fwd_header_pixmap.scaled(10, 10, Qt.KeepAspectRatio,
+                                                     Qt.SmoothTransformation)
+        self.fwd_header_icon = QIcon()
+        self.fwd_header_icon.addPixmap(fwd_header_pixmap, QIcon.Selected, QIcon.On)
+        self.messageTree.headerItem().setText(2, "")
+        self.messageTree.headerItem().setIcon(2, self.fwd_header_icon)
+        self.messageTree.headerItem().setToolTip(2, "Содержит пересланные сообщения")
 
-        def connect_widgets(self):
+    def _connect_widgets(self):
+        self.nam.finished.connect(self.reply_handling)
+        self.loading_icon.frameChanged.connect(self.loading_icon_update)
 
-            self.nam.finished.connect(self.reply_handling)
+        # виджет сообщений
+        self.messageTree.itemEntered.connect(self.on_hover)
+        self.messageTree.itemSelectionChanged.connect(self.on_select)
+        self.messageTree.itemDoubleClicked.connect(self.on_doubleclick)
+        self.messageTree.itemExpanded.connect(self.on_expand)
+        self.messageTree.customContextMenuRequested.connect(self.on_rightclick)
 
-            self.loading_icon.frameChanged.connect(self.loading_icon_update)
+        # боксы
+        self.lengthDialog.and_orCombobox.currentIndexChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_symbolsCombobox.currentIndexChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_symbolsSpinbox.valueChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_symbolsCheckbox.stateChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_wordsCombobox.currentIndexChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_wordsSpinbox.valueChanged.connect(self.boxes_handling)
+        self.lengthDialog.min_wordsCheckbox.stateChanged.connect(self.boxes_handling)
 
-            # виджет сообщений
-            self.messageTree.itemEntered.connect(self.on_hover)
-            self.messageTree.itemSelectionChanged.connect(self.on_select)
-            self.messageTree.itemDoubleClicked.connect(self.on_doubleclick)
-            self.messageTree.itemExpanded.connect(self.on_expand)
-            self.messageTree.customContextMenuRequested.connect(self.on_rightclick)
+        # кнопки
+        self.testButton.clicked.connect(self.test_function)
+        self.applyButton.clicked.connect(self.refresh)
+        self.fileButton.clicked.connect(self.browse_file)
+        self.hideButton.clicked.connect(self.hide_item)
+        self.undoButton.clicked.connect(self.undo_last)
+        self.undo_menu.triggered.connect(self.undo_all)
+        self.settingsButton.clicked.connect(self.settings)
+        self.lengthButton.clicked.connect(self.length_settings)
+        self.settings_group.buttonReleased.connect(self.buttons_handling)
 
-            # боксы
-            self.and_orCombobox.currentIndexChanged.connect(self.boxes_handling)
+        # поиск по словам
+        self.searchLine.textChanged.connect(self.refresh)
+        self.exact_searchCheckbox.stateChanged.connect(self.refresh)
 
-            self.min_symbolsCombobox.currentIndexChanged.connect(self.boxes_handling)
-            self.min_symbolsSpinbox.valueChanged.connect(self.boxes_handling)
-            self.min_symbolsCheckbox.stateChanged.connect(self.boxes_handling)
-
-            self.min_wordsCombobox.currentIndexChanged.connect(self.boxes_handling)
-            self.min_wordsSpinbox.valueChanged.connect(self.boxes_handling)
-            self.min_wordsCheckbox.stateChanged.connect(self.boxes_handling)
-
-            # кнопки
-            self.testButton.clicked.connect(self.test_function)
-            self.applyButton.clicked.connect(self.refresh)
-            self.fileButton.clicked.connect(self.browse_file)
-            self.hideButton.clicked.connect(self.hide_item)
-            self.undoButton.clicked.connect(self.undo_last)
-            self.undo_menu.triggered.connect(self.undo_all)
-            self.settingsButton.clicked.connect(self.settings)
-            self.lengthButton.clicked.connect(self.length_settings)
-            self.settings_group.buttonReleased.connect(self.buttons_handling)
-
-            # поиск по словам
-            self.searchLine.textChanged.connect(self.refresh)
-            self.exact_searchCheckbox.stateChanged.connect(self.refresh)
-
-        def start_worker(self):
-            self.worker = Worker()
-            self.worker_thread = QThread()
-            self.request_parsing.connect(self.worker.parse_file)
-            self.worker.parsed.connect(self.insert_parsed)
-            self.worker.analysis.connect(self.analysis_processing)
-            self.worker.done.connect(self.parsing_done)
-            self.worker.moveToThread(self.worker_thread)
-            self.worker_thread.start()
-
-        init(self)
+    def _start_worker(self):
+        self.worker = Worker()
+        self.worker_thread = QThread()
+        self.request_parsing.connect(self.worker.parse_file)
+        self.worker.parsed.connect(self.insert_parsed)
+        self.worker.analysis.connect(self.analysis_processing)
+        self.worker.done.connect(self.parsing_done)
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.start()
 
     def settings(self):
         if self.settingsWidget.geometry().getRect()[3] == 0:
@@ -544,21 +532,21 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
             self.lengthDialog.hide_with_anim()
 
     def browse_file(self):
-        def clear_everything(self):
-            self.messageTree.clear()
-            self.analysis_wordsTree.clear()
-            self.analysis_emojisTree.clear()
-            self.analysis_dict.clear()
-            self.searchLine.clear()
-            self.linkLine.clear()
-            self.selected.clear()
-            self.doubleclicked = ()
-
         file_path = QFileDialog.getOpenFileName(self, "Выберите файл", filter="*.html")  # окно с выбором файла
         if len(file_path[0]):
             file_path, extension = file_path
-            clear_everything(self)
+            self.clear()
             self.request_parsing.emit(file_path)
+
+    def clear(self):
+        self.messageTree.clear()
+        self.analysis_wordsTree.clear()
+        self.analysis_emojisTree.clear()
+        self.analysis_dict.clear()
+        self.searchLine.clear()
+        self.linkLine.clear()
+        self.selected.clear()
+        self.doubleclicked = None
 
     def parsing_done(self):
         # вызывается после окончания парсинга
@@ -790,39 +778,39 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
 
     def boxes_handling(self):
         # логика настроек текста
-        if not self.min_wordsCheckbox.isChecked():
-            self.min_wordsCombobox.setEnabled(False)
-            self.min_wordsSpinbox.setEnabled(False)
-            self.and_orCombobox.setEnabled(False)
-            self.min_words = False
-        elif self.min_wordsCheckbox.isChecked():
-            self.min_wordsCombobox.setEnabled(True)
-            self.min_wordsSpinbox.setEnabled(True)
-            self.min_words = self.min_wordsSpinbox.value()
+        if not self.lengthDialog.min_wordsCheckbox.isChecked():
+            self.lengthDialog.min_wordsCombobox.setEnabled(False)
+            self.lengthDialog.min_wordsSpinbox.setEnabled(False)
+            self.lengthDialog.and_orCombobox.setEnabled(False)
+            self.lengthDialog.min_words = False
+        elif self.lengthDialog.min_wordsCheckbox.isChecked():
+            self.lengthDialog.min_wordsCombobox.setEnabled(True)
+            self.lengthDialog.min_wordsSpinbox.setEnabled(True)
+            self.lengthDialog.min_words = self.lengthDialog.min_wordsSpinbox.value()
 
-        if not self.min_symbolsCheckbox.isChecked():
-            self.min_symbolsCombobox.setEnabled(False)
-            self.min_symbolsSpinbox.setEnabled(False)
-            self.and_orCombobox.setEnabled(False)
-            self.min_symbols = False
-        elif self.min_symbolsCheckbox.isChecked():
-            self.min_symbolsCombobox.setEnabled(True)
-            self.min_symbolsSpinbox.setEnabled(True)
-            self.min_symbols = self.min_symbolsSpinbox.value()
+        if not self.lengthDialog.min_symbolsCheckbox.isChecked():
+            self.lengthDialog.min_symbolsCombobox.setEnabled(False)
+            self.lengthDialog.min_symbolsSpinbox.setEnabled(False)
+            self.lengthDialog.and_orCombobox.setEnabled(False)
+            self.lengthDialog.min_symbols = False
+        elif self.lengthDialog.min_symbolsCheckbox.isChecked():
+            self.lengthDialog.min_symbolsCombobox.setEnabled(True)
+            self.lengthDialog.min_symbolsSpinbox.setEnabled(True)
+            self.lengthDialog.min_symbols = self.lengthDialog.min_symbolsSpinbox.value()
 
-        if self.min_wordsCheckbox.isChecked() and self.min_symbolsCheckbox.isChecked():
-            self.and_orCombobox.setEnabled(True)
+        if self.lengthDialog.min_wordsCheckbox.isChecked() and self.lengthDialog.min_symbolsCheckbox.isChecked():
+            self.lengthDialog.and_orCombobox.setEnabled(True)
         else:
-            self.and_orCombobox.setEnabled(False)
+            self.lengthDialog.and_orCombobox.setEnabled(False)
 
-        if not self.min_wordsSpinbox.value() == 11 and not self.min_symbolsSpinbox.value() == 11:
-            self.min_wordsLabel.setText(self.MIN_ENDINGS_DICT[str(self.min_wordsSpinbox.value())[-1]][0])
-            self.min_symbolsLabel.setText(self.MIN_ENDINGS_DICT[str(self.min_symbolsSpinbox.value())[-1]][1])
+        if not self.lengthDialog.min_wordsSpinbox.value() == 11 and not self.lengthDialog.min_symbolsSpinbox.value() == 11:
+            self.lengthDialog.min_wordsLabel.setText(self.MIN_ENDINGS_DICT[str(self.lengthDialog.min_wordsSpinbox.value())[-1]][0])
+            self.lengthDialog.min_symbolsLabel.setText(self.MIN_ENDINGS_DICT[str(self.lengthDialog.min_symbolsSpinbox.value())[-1]][1])
         else:
-            if self.min_wordsSpinbox.value() == 11:
-                self.min_wordsLabel.setText(" слов")
-            if self.min_symbolsSpinbox.value() == 11:
-                self.min_symbolsLabel.setText(" символов")
+            if self.lengthDialog.min_wordsSpinbox.value() == 11:
+                self.lengthDialog.min_wordsLabel.setText(" слов")
+            if self.lengthDialog.min_symbolsSpinbox.value() == 11:
+                self.lengthDialog.min_symbolsLabel.setText(" символов")
 
     def buttons_handling(self, button):
         if button.isChecked():
@@ -920,7 +908,6 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
     #                         else:
     #                             item.setHidden(True)
     #
-    #
     #             # Поиск по словам
     #             if self.searchLine.text():
     #                 if not self.exact_searchCheckbox.isChecked():
@@ -961,6 +948,7 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
     def on_select(self):
         self.selected = self.messageTree.selectedItems()
         if self.selected:
+            print(self.messageTree.visualItemRect(self.selected[0]), self.messageTree.geometry())
             item = self.selected[0]
             self.preview_handling(item)
             self.hideButton.setEnabled(True)
@@ -1073,7 +1061,6 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
                     else:
                         fwditem.setIcon(0, self.loaded_userpics[forward_user])
 
-
     def hide_item(self):
         if self.selected:
             for item in self.selected:
@@ -1081,6 +1068,8 @@ class ChatParser(QMainWindow, gui.Ui_MainWindow):
                 item.setSelected(False)
                 self.hidden.append(item)
                 self.shown -= 1
+            for item in self.hidden:
+                print(self.messageTree.visualItemRect(item))
             self.showntotal_update()
             self.hideButton.setEnabled(False)
             self.undoButton.setEnabled(True)
