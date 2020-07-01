@@ -8,12 +8,14 @@ from lxml import etree
 
 userpic_urls: dict = {}
 analysis_todo: dict = {}
-default_flags = """
-notext hastext hasemoji noemoji noattachment
-hasattachment graffiti sticker voice 
+DEF_FLAGS = """
+notext hastext 
+noemoji hasemoji  
+noattachment hasattachment 
 noforward hasforward isforward
+graffiti sticker voice 
 """
-flag = Flags("Message Flags", default_flags)
+flag = Flags("Message Flags", DEF_FLAGS)
 
 
 class Object:
@@ -95,8 +97,8 @@ def parse_file(file_path: str, batch_amount: int):
 
 
 def msg_amount(elem):
-    textp = re.compile(" Всего сообщений:")
-    intp = re.compile("\d+")
+    textp = re.compile(r" Всего сообщений:")
+    intp = re.compile(r"\d+")
     if elem.tag == "h4" and elem.text:
         if re.match(textp, elem.text):
             amount = re.search(intp, elem.text).group()
@@ -184,19 +186,20 @@ def parse_text_info(message_item):
 
 
 def get_text_emoji(msg_body):
-    msg_body_list = msg_body.xpath(".//node()")
+    msg_body_elems = msg_body.xpath(".//node()")
     text = ""
     emoji = []
-    for i in msg_body_list:
-        if type(i) == etree._Element and i.tag == "img":
-            text += i.attrib["alt"]
-            emoji.append(i.attrib["alt"])
-        elif type(i) == etree._Element and i.tag == "br":
+
+    for elem in msg_body_elems:
+        if type(elem) == etree._Element and elem.tag == "img":
+            text += elem.attrib["alt"]
+            emoji.append(elem.attrib["alt"])
+        elif type(elem) == etree._Element and elem.tag == "br":
             text += "\n"
-        elif type(i) == etree._Element and i.tag == "a":
-            text += i.text
-        elif type(i) == etree._ElementUnicodeResult:
-            text += i
+        elif type(elem) == etree._Element and elem.tag == "a":
+            text += elem.text
+        elif type(elem) == etree._ElementUnicodeResult:
+            text += elem
     return text, emoji
 
 
@@ -226,7 +229,7 @@ def get_attachments(message_item):
 
 def parse_attachment(attachment):
     # если аттачмент преобразован (нет тэга <pre>)
-    if not attachment.find(".pre"):
+    if attachment.find(".pre") is None:
         if attachment.attrib["class"] == "attacment":
             return get_att_info(attachment)
         elif attachment.attrib["class"] == "attacment attb_link":
@@ -244,8 +247,7 @@ def get_att_info(attachment):
                 "att_link": att_link,
                 "att_link_text": att_link_text}
     if att_type == "att_wall":
-        att_info.update(get_att_wall(attachment, attachment_contents))
-
+        return {**att_info, **get_att_wall(attachment, attachment_contents)}
     return att_info
 
 
@@ -295,13 +297,13 @@ def get_pre(attachment):
     pre_info = {"att_type": att_type}
 
     if att_type == "market":
-        return pre_info.update(get_pre_market(data))
+        return {**pre_info, **get_pre_market(data)}
 
     elif att_type == "poll":
-        return pre_info.update(get_pre_poll(data))
+        return {**pre_info, **get_pre_poll(data)}
 
     elif att_type == "photos_list":
-        return pre_info.update(get_pre_photos_list(data))
+        return {**pre_info, **get_pre_photos_list(data)}
     else:
         return get_pre_unknown(att_type)
 
@@ -413,4 +415,3 @@ def analyse(todo: dict):
                      "most_emojis": most_emojis_cntr}
 
     return analysis_dict
-
